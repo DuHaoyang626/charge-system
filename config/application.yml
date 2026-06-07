@@ -1,0 +1,141 @@
+# ============================================
+# 智能充电桩调度计费系统 — 配置文件
+# 系统启动时自动读取，运行时可通过 API 修改
+# ============================================
+
+station:
+  name: "智能充电站-01"
+  max_queue_capacity: 50       # 每个充电桩排队区最大车辆数（超出拒绝入队）
+  max_waiting_capacity: 5      # 每个充电桩等待区最大车辆数
+
+# ------------------------------------------------------------------
+# 充电桩配置
+# 每个充电桩独立配置：类型、功率、支持协议、充电位数量
+# 新增充电桩只需在此处添加条目，重启后自动识别
+# ------------------------------------------------------------------
+piles:
+  - id: "P001"
+    name: "快充桩-01"
+    type: fast_charge           # fast_charge | slow_charge
+    max_power_kw: 120.0         # 最大输出功率（kW）
+    protocols:                  # 支持的充电协议列表
+      - GB_STANDARD
+      - CCS
+    parking_spots: 2            # 充电区占用的物理停车位数量
+
+  - id: "P002"
+    name: "快充桩-02"
+    type: fast_charge
+    max_power_kw: 120.0
+    protocols:
+      - GB_STANDARD
+      - CCS
+      - CHADEMO
+    parking_spots: 2
+
+  - id: "P003"
+    name: "慢充桩-01"
+    type: slow_charge
+    max_power_kw: 7.0
+    protocols:
+      - GB_STANDARD
+    parking_spots: 1
+
+  - id: "P004"
+    name: "慢充桩-02"
+    type: slow_charge
+    max_power_kw: 7.0
+    protocols:
+      - GB_STANDARD
+      - CCS
+    parking_spots: 1
+
+  - id: "P005"
+    name: "慢充桩-03"
+    type: slow_charge
+    max_power_kw: 11.0
+    protocols:
+      - GB_STANDARD
+      - CHADEMO
+    parking_spots: 1
+
+# ------------------------------------------------------------------
+# 调度策略配置
+# 系统启动时加载此处的默认值
+# 管理员运行中可通过 API 切换，切换时同步写回此处
+# ------------------------------------------------------------------
+dispatch:
+  # 正常分配策略：SHORTEST_TOTAL_TIME | BATCH_SHORTEST_TIME
+  default_algorithm: "SHORTEST_TOTAL_TIME"
+
+  # 故障处理策略：PRIORITY | TIME_ORDER | FAULT_RECOVERY
+  #              | SHORTEST_TOTAL_TIME | BATCH_SHORTEST_TIME
+  default_fault_strategy: "TIME_ORDER"
+
+# ------------------------------------------------------------------
+# 计费规则配置（全局默认值）
+# 充电桩级别独立配置存储在数据库 pile_tariff_configs 表中
+# 若某桩无独立配置，则使用此处全局默认值
+# ------------------------------------------------------------------
+billing:
+  # --- 时段定义（24小时制，闭区间 [start, end)）---
+  time_periods:
+    peak:
+      - start: "10:00"
+        end: "12:00"
+      - start: "17:00"
+        end: "19:00"
+    valley:
+      - start: "00:00"
+        end: "08:00"
+      - start: "22:00"
+        end: "23:59"
+    normal:                    # 平时为峰时和谷时之外的剩余时段
+      - start: "08:00"
+        end: "10:00"
+      - start: "12:00"
+        end: "17:00"
+      - start: "19:00"
+        end: "22:00"
+
+  # --- 默认三时段电价（元/kWh）---
+  default_prices:
+    peak_price: 1.2            # 峰时电价
+    normal_price: 0.8          # 平时电价
+    valley_price: 0.4          # 谷时电价
+
+  # --- 服务费规则 ---
+  service_fee:
+    base_fee: 5.0              # 基础服务费（元），等待区退出/充电区超时扣除
+    time_coefficient: 0.5      # 时长系数（元/分钟）
+    overtime_penalty: 0.8      # 超时充电附加费率（元/分钟）
+
+  # --- 超时配置 ---
+  timeout_config:
+    charging_confirm_timeout_seconds: 120   # 进入充电区确认超时（秒）
+    timeout_base_fee: 5.0                   # 超时取消扣除的基本服务费（元，可每桩不同，此处为默认值）
+
+# ------------------------------------------------------------------
+# 监控配置
+# ------------------------------------------------------------------
+monitoring:
+  refresh_interval_seconds: 10  # 管理员客户端轮询刷新间隔（秒）
+
+# ------------------------------------------------------------------
+# 日志配置
+# 日志等级：0=常规, 1=注意, 2=警告, 3=严重, 4=崩溃
+# ------------------------------------------------------------------
+logging:
+  # 终端输出阈值：记录到数据库的日志中，高于此等级的额外输出到终端
+  # 例如设为 1（注意），则等级 ≥1 的日志既入 DB 也输出到终端；
+  # 设为 4（崩溃），则仅等级 4 输出到终端；
+  # 设为 -1，则所有日志仅入 DB，不输出终端
+  console_threshold: 1
+
+# ------------------------------------------------------------------
+# 系统通用配置
+# ------------------------------------------------------------------
+system:
+  jwt_secret: "charge-system-jwt-secret-key-2026"
+  token_expire_minutes: 1440    # Token 过期时间（24小时）
+  db_path: "data/charge_system.db"  # 数据库文件路径（相对于项目根目录）
