@@ -14,7 +14,7 @@
 
 ### 2.1 实体（Entity）
 
-- `ChargingStation充电站`：充电站聚合根，持有排队区、等待区与充电区
+- `ChargingStation充电站`：充电站聚合根，持有充电区（含多个充电桩），每个充电桩各自管理其排队区与等待区
 - `User用户`、`Vehicle车辆`：用户与车辆
 - `ChargingRequest充电请求`：一次充电请求，贯穿排队/等待/充电状态
 - `ChargingPile充电桩`：充电桩（快充/慢充）
@@ -49,8 +49,6 @@ class ChargingStation充电站 {
   +stationId: String (站点编号)
   +name: String (名称)
   +address: String (地址)
-  +maxQueueCapacity: Integer (排队区最大容量)
-  +totalWaitCapacity: Integer (等待区总容量)
   +receiveRequest(request: ChargingRequest充电请求) (接收请求)
   +executeDispatch() (执行调度)
 }
@@ -122,7 +120,9 @@ class ChargingPile充电桩 {
 
 class PileQueue桩队列 {
   +queueId: String (队列编号)
-  +capacity: Integer (容量)
+  +capacity: Integer (容量，默认4)
+  +queueArea: QueueArea排队区 (排队区)
+  +waitingArea: WaitingArea等待区 (等待区)
   +enqueue(request: ChargingRequest充电请求) (入队)
   +dequeue(): ChargingRequest充电请求 (出队)
   +remove(requestId: String) (移除)
@@ -231,12 +231,13 @@ class DispatchStrategy调度策略 {
 }
 
 class QueueService队列服务 {
-  +moveToQueueArea(request: ChargingRequest充电请求) (移动到排队区)
-  +moveToWaitingArea(request: ChargingRequest充电请求, pile: ChargingPile充电桩) (移动到等待区)
+  +moveToQueueArea(request: ChargingRequest充电请求, pile: ChargingPile充电桩) (移动到指定桩的排队区)
+  +moveToWaitingArea(request: ChargingRequest充电请求, pile: ChargingPile充电桩) (移动到指定桩的等待区)
   +moveToPileQueue(request: ChargingRequest充电请求, pile: ChargingPile充电桩) (移动到桩队列)
   +promoteToCharging(pile: ChargingPile充电桩) (提升到充电中)
   +getCarState(car_id: String): CarState (查询车辆状态)
   +getQueueDetail(queuelist: List): QueueDetail[] (查询队列详情)
+  +changeQueue(vehicleId: String, fromPile: ChargingPile充电桩, toPile: ChargingPile充电桩) (跨桩换队)
 }
 
 class BillingService计费服务 {
@@ -328,11 +329,11 @@ class PaymentStatus支付状态 {
   REFUNDED (已退款)
 }
 
-ChargingStation充电站 --> QueueArea排队区
-ChargingStation充电站 --> WaitingArea等待区
 ChargingStation充电站 --> ChargingArea充电区
 ChargingArea充电区 --> ChargingPile充电桩
 ChargingPile充电桩 --> PileQueue桩队列
+PileQueue桩队列 --> QueueArea排队区
+PileQueue桩队列 --> WaitingArea等待区
 
 User用户 --> Vehicle车辆 : owns
 Vehicle车辆 --> ChargingRequest充电请求 : initiates
@@ -346,12 +347,9 @@ BillingRecord账单记录 ..> TimeOfUseTariffPolicy分时电价策略 : uses
 BillingRecord账单记录 ..> ServiceFeePolicy服务费策略 : uses
 DetailedBill详单记录 ..> TimeOfUseTariffPolicy分时电价策略 : uses
 
-DispatchService调度服务 ..> QueueArea排队区
-DispatchService调度服务 ..> WaitingArea等待区
+DispatchService调度服务 ..> PileQueue桩队列
 DispatchService调度服务 ..> ChargingPile充电桩
 DispatchService调度服务 ..> ChargingRequest充电请求
-QueueService队列服务 ..> QueueArea排队区
-QueueService队列服务 ..> WaitingArea等待区
 QueueService队列服务 ..> PileQueue桩队列
 BillingService计费服务 ..> ChargingSession充电会话
 BillingService计费服务 ..> TimeOfUseTariffPolicy分时电价策略
@@ -377,7 +375,7 @@ DispatchService调度服务 --> DispatchStrategy调度策略 : uses
 ## 4. 关键约束与业务规则映射
 
 - 快充/慢充分流：`ChargingRequest充电请求.chargingMode` + `DispatchService调度服务.assignChargingPile`
-- 三级队列：QueueArea排队区（按模式排队）+ WaitingArea等待区（进入充电前缓冲）+ 每桩队列（`PileQueue桩队列`）
+- 三区队列（每桩独立）：每个充电桩的 `PileQueue桩队列` 管理自己的 `QueueArea排队区` + `WaitingArea等待区`，`ChargingArea充电区` 包含所有充电桩
 - 桩队列容量：`PileQueue桩队列.capacity`（默认可设为 4）
 - 最短完成时间目标：`DispatchService调度服务.estimateTotalCompletionTime`
 - 请求变更与取消：`ChargingRequest充电请求.updateRequest/cancel`
@@ -390,7 +388,7 @@ DispatchService调度服务 --> DispatchStrategy调度策略 : uses
 
 ## 5. 聚合建议（实现时可采用）
 
-- 充电站聚合：`ChargingStation充电站`、`QueueArea排队区`、`WaitingArea等待区`、`ChargingArea充电区`、`ChargingPile充电桩`、`PileQueue桩队列`、`TariffConfig计费规则配置`
+- 充电站聚合：`ChargingStation充电站`、`ChargingArea充电区`、`ChargingPile充电桩`、`PileQueue桩队列`（含 `QueueArea排队区` + `WaitingArea等待区`）、`TariffConfig计费规则配置`
 - 请求聚合：`ChargingRequest充电请求`、`ChargingSession充电会话`
 - 调度策略聚合：`DispatchStrategy调度策略`、`DispatchService调度服务`
 - 计费聚合：`BillingRecord账单记录`、`DetailedBill详单记录`、`PaymentOrder支付订单`、`TimeOfUseTariffPolicy分时电价策略`、`ServiceFeePolicy服务费策略`
