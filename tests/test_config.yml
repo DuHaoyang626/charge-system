@@ -1,0 +1,68 @@
+# ============================================
+# 测试专用配置文件
+# 覆盖主配置 application.yml 中的部分值
+# 测试使用更低容量、更快超时，便于验证边界条件
+# ============================================
+
+station:
+  name: "测试充电站"
+  max_queue_capacity: 5           # 小容量，便于测试排队区满
+  max_waiting_capacity: 2
+
+piles:
+  - id: "P001"
+    name: "测试快充桩-01"
+    type: fast_charge
+    max_power_kw: 120.0
+    protocols:
+      - GB_STANDARD
+      - CCS
+    parking_spots: 1
+
+  - id: "P002"
+    name: "测试慢充桩-01"
+    type: slow_charge
+    max_power_kw: 7.0
+    protocols:
+      - GB_STANDARD
+    parking_spots: 1
+
+dispatch:
+  default_algorithm: "SHORTEST_TOTAL_TIME"
+  default_fault_strategy: "TIME_ORDER"
+
+billing:
+  time_periods:
+    peak:
+      - start: "10:00"
+        end: "12:00"
+    valley:
+      - start: "00:00"
+        end: "08:00"
+    normal:
+      - start: "08:00"
+        end: "10:00"
+      - start: "12:00"
+        end: "00:00"
+
+  default_prices:
+    peak_price: 1.5
+    normal_price: 1.0
+    valley_price: 0.5
+
+  service_fee:
+    base_fee: 5.0
+    time_coefficient: 0.5
+    overtime_penalty: 0.8
+
+  timeout_config:
+    charging_confirm_timeout_seconds: 10   # 短超时，便于测试超时场景
+    timeout_base_fee: 5.0
+
+logging:
+  console_threshold: -1   # 测试中不输出日志到终端
+
+system:
+  jwt_secret: "test-secret-key"
+  token_expire_minutes: 60
+  db_path: ""              # 测试时使用 :memory:

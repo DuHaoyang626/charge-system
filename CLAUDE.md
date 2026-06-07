@@ -34,6 +34,19 @@ docs/
 ├── 系统架构设计文档.md               # Implementation reference — tech stack, APIs, data models, flows, Logger
 ├── 数据设计说明.md                   # Database schema (13 tables), config design, Logger module design
 └── 云平台文件/                       # Course reference materials (templates, slides)
+
+src/                                  # Python 源码包
+├── main.py                           # FastAPI 入口
+├── config/                           # 配置加载
+├── db/                               # 数据库 ORM 模型
+├── enums/                            # Python 枚举定义
+├── schemas/                          # Pydantic 请求/响应模型
+├── services/                         # 领域服务
+├── routers/                          # REST API 路由
+└── utils/                            # 工具（Logger 等）
+
+tests/                                # pytest 测试
+requirements.txt                      # Python 依赖
 ```
 
 > **Key reference for implementation**: Start with `docs/数据设计说明.md` for DB schema, then `docs/系统架构设计文档.md` for API and business logic.

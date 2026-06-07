@@ -1,0 +1,29 @@
+# ============================================
+# 智能充电桩调度计费系统 — 依赖清单
+# 安装：pip install -r requirements.txt
+# ============================================
+
+# Web 框架
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+
+# 数据库
+sqlalchemy>=2.0
+
+# 认证
+python-jose[cryptography]>=3.3
+passlib[bcrypt]>=1.7
+
+# 定时任务
+apscheduler>=3.10
+
+# 配置管理
+pyyaml>=6.0
+pydantic>=2.0
+pydantic-settings>=2.0
+
+# --- 开发依赖 ---
+
+# 测试
+pytest>=8.0
+httpx>=0.27
