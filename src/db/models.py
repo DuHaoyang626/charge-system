@@ -15,7 +15,6 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base
 
@@ -48,7 +47,6 @@ class Vehicle(Base):
     license_plate = Column(String(20), unique=True, nullable=False)
     battery_capacity_kwh = Column(DECIMAL(8, 2), nullable=False)
     current_battery_percentage = Column(DECIMAL(5, 2), nullable=False, default=0)
-    charging_protocol = Column(String(20), nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.now)
     updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)
 
@@ -70,17 +68,6 @@ class ChargingPile(Base):
     current_charging_count = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, nullable=False, default=datetime.now)
     updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)
-
-
-class PileProtocol(Base):
-    """充电桩协议关联表"""
-    __tablename__ = "pile_protocols"
-    __table_args__ = (UniqueConstraint("pile_id", "protocol"),)
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    pile_id = Column(String(16), nullable=False)
-    protocol = Column(String(20), nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.now)
 
 
 class PileTariffConfig(Base):
@@ -134,7 +121,6 @@ class ChargingSession(Base):
     target_power_kwh = Column(DECIMAL(8, 2), nullable=False)
     charged_power_kwh = Column(DECIMAL(8, 2), nullable=False, default=0)
     current_power_kw = Column(DECIMAL(6, 2), nullable=True)
-    charging_protocol = Column(String(20), nullable=False)
     fault_interrupted = Column(Boolean, nullable=False, default=False)
     interrupted_power_kwh = Column(DECIMAL(8, 2), nullable=True)
     session_status = Column(String(16), nullable=False, default="ACTIVE")

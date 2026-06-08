@@ -26,7 +26,7 @@ def _seed_test_data():
     from datetime import datetime
 
     from src.db.database import get_session
-    from src.db.models import BillingRecord, ChargingPile, ChargingSession, DetailedBill, PileProtocol
+    from src.db.models import BillingRecord, ChargingPile, ChargingSession, DetailedBill
 
     session = get_session()
     try:
@@ -45,15 +45,6 @@ def _seed_test_data():
                 )
                 session.add(pile)
 
-            # 同步协议
-            for proto in pile_cfg.protocols:
-                existing_proto = session.query(PileProtocol).filter(
-                    PileProtocol.pile_id == pile_cfg.id,
-                    PileProtocol.protocol == proto,
-                ).first()
-                if not existing_proto:
-                    session.add(PileProtocol(pile_id=pile_cfg.id, protocol=proto))
-
         # ── 计费测试种子数据 ──────────────────────────
         # ChargingSession (for calculate_bill tests)
         existing_cs = session.query(ChargingSession).filter(
@@ -70,7 +61,6 @@ def _seed_test_data():
                 target_power_kwh=50.0,
                 charged_power_kwh=50.0,
                 current_power_kw=50.0,
-                charging_protocol="GB_STANDARD",
                 session_status="COMPLETED",
             ))
 
@@ -208,3 +198,22 @@ def client():
             os.unlink(db_path)
     except (PermissionError, OSError):
         pass
+
+
+@pytest.fixture(scope="function")
+def admin_token(client):
+    """获取管理员 JWT token（供需要管理员认证的测试使用）"""
+    response = client.post("/api/admin/login", json={
+        "username": "admin",
+        "password": "admin123",
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    return data["token"]
+
+
+@pytest.fixture(scope="function")
+def admin_headers(admin_token):
+    """管理员认证请求头"""
+    return {"Authorization": f"Bearer {admin_token}"}

@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.config import config
 from src.db.database import init, init_db, get_session, close
-from src.db.models import ChargingPile, PileProtocol
+from src.db.models import ChargingPile
 
 
 def main():
@@ -61,10 +61,6 @@ def main():
                     status="AVAILABLE",
                 )
                 session.add(pile)
-                session.flush()
-
-                for proto in pile_cfg.protocols:
-                    session.add(PileProtocol(pile_id=pile_cfg.id, protocol=proto))
                 new_count += 1
 
         session.commit()

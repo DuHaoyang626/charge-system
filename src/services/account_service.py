@@ -74,7 +74,6 @@ class AccountService:
                 license_plate=car_id,
                 battery_capacity_kwh=car_capacity,
                 current_battery_percentage=0,
-                charging_protocol="GB_STANDARD",
                 created_at=now,
                 updated_at=now,
             )

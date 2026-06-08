@@ -39,13 +39,6 @@ class ZoneType(str, Enum):
     CHARGING_AREA = "CHARGING_AREA"
 
 
-class ProtocolType(str, Enum):
-    """充电协议类型"""
-    GB_STANDARD = "GB_STANDARD"
-    CCS = "CCS"
-    CHADEMO = "CHADEMO"
-
-
 class PaymentStatus(str, Enum):
     """支付状态"""
     UNPAID = "UNPAID"

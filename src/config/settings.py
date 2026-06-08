@@ -70,13 +70,18 @@ class PileConfig(BaseModel):
     name: str
     type: str  # fast_charge | slow_charge
     max_power_kw: float
-    protocols: list[str] = Field(default_factory=list)
     parking_spots: int = 1
 
 
 class MonitoringConfig(BaseModel):
     """监控配置"""
     refresh_interval_seconds: int = 10
+
+
+class AdminConfig(BaseModel):
+    """管理员配置"""
+    username: str = "admin"
+    password: str = "admin123"
 
 
 class LoggingConfig(BaseModel):
@@ -100,5 +105,6 @@ class AppSettings(BaseModel):
     dispatch: DispatchConfig = Field(default_factory=DispatchConfig)
     billing: BillingConfig = Field(default_factory=BillingConfig)
     monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)
+    admin: AdminConfig = Field(default_factory=AdminConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     system: SystemConfig = Field(default_factory=SystemConfig)

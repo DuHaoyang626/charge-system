@@ -8,21 +8,100 @@
 
 from datetime import datetime
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt
 
+from src.config import config
 from src.db.database import get_session
-from src.db.models import BillingRecord, ChargingPile, ChargingRequest, PaymentOrder
+from src.db.models import BillingRecord, ChargingPile, ChargingRequest
 from src.enums import LogModule
+from src.schemas.admin import AdminLoginRequest
 from src.utils.logger import logger
 
 router = APIRouter(prefix="/api/admin", tags=["管理员"])
 
+# ── 管理员认证中间件 ────────────────────────────────────
+
+_security = HTTPBearer(auto_error=False)
+
+
+def _create_admin_token() -> str:
+    """生成管理员 JWT token"""
+    from datetime import timedelta
+
+    now = datetime.now()
+    payload = {
+        "sub": "admin",
+        "role": "admin",
+        "exp": now + timedelta(minutes=config.system.token_expire_minutes),
+        "iat": now,
+    }
+    return jwt.encode(payload, config.system.jwt_secret, algorithm="HS256")
+
+
+def _verify_admin_token(token: str) -> bool:
+    """验证管理员 JWT token"""
+    try:
+        payload = jwt.decode(token, config.system.jwt_secret, algorithms=["HS256"])
+        return payload.get("sub") == "admin" and payload.get("role") == "admin"
+    except JWTError:
+        return False
+
+
+def require_admin(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_security),
+):
+    """FastAPI 依赖：要求管理员身份认证
+
+    在需要管理员权限的路由上添加此依赖：
+        @router.post("/xxx", dependencies=[Depends(require_admin)])
+    """
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="缺少管理员认证")
+    if not _verify_admin_token(credentials.credentials):
+        raise HTTPException(status_code=401, detail="管理员认证无效或已过期")
+
 
 # ======================================================================
-# UC-16: 移动车辆位置
+# 管理员登录
 # ======================================================================
 
-@router.put("/vehicles/{car_id}/move", summary="移动车辆位置", response_model=dict)
+@router.post("/login", summary="管理员登录", response_model=dict)
+def admin_login(body: AdminLoginRequest):
+    """adminLogin(username, password)
+
+    管理员凭用户名和密码登录，获取 JWT token。
+    后续所有管理操作需在请求头携带 `Authorization: Bearer <token>`。
+
+    **请求体：**
+    ```json
+    {"username": "admin", "password": "admin123"}
+    ```
+
+    **成功响应：**
+    ```json
+    {"success": true, "token": "eyJ...", "message": "管理员登录成功"}
+    ```
+    """
+    if (body.username != config.admin.username
+            or body.password != config.admin.password):
+        logger.notice(LogModule.ADMIN,
+                      f"[认证] 管理员登录失败: {body.username}")
+        return {"success": False, "message": "管理员用户名或密码错误"}
+
+    token = _create_admin_token()
+    logger.notice(LogModule.ADMIN,
+                  f"[认证] 管理员登录成功: {body.username}")
+    return {"success": True, "token": token, "message": "管理员登录成功"}
+
+
+# ======================================================================
+# UC-16: 移动车辆位置（需管理员认证）
+# ======================================================================
+
+@router.put("/vehicles/{car_id}/move", summary="移动车辆位置",
+            response_model=dict, dependencies=[Depends(require_admin)])
 def move_vehicle(
     car_id: str,
     target_pile_id: str = Query(..., description="目标充电桩编号"),
@@ -122,10 +201,11 @@ def move_vehicle(
 
 
 # ======================================================================
-# UC-20: 生成运营报表
+# UC-20: 生成运营报表（需管理员认证）
 # ======================================================================
 
-@router.get("/reports", summary="生成运营报表", response_model=dict)
+@router.get("/reports", summary="生成运营报表",
+            response_model=dict, dependencies=[Depends(require_admin)])
 def generate_report(
     start_date: str = Query("", description="开始日期 YYYY-MM-DD"),
     end_date: str = Query("", description="结束日期 YYYY-MM-DD"),

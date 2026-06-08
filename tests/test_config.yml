@@ -14,17 +14,12 @@ piles:
     name: "测试快充桩-01"
     type: fast_charge
     max_power_kw: 120.0
-    protocols:
-      - GB_STANDARD
-      - CCS
     parking_spots: 1
 
   - id: "P002"
     name: "测试慢充桩-01"
     type: slow_charge
     max_power_kw: 7.0
-    protocols:
-      - GB_STANDARD
     parking_spots: 1
 
 dispatch:

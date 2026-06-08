@@ -215,7 +215,6 @@ class TestChargingAPI:
                 car_id="京A12345", pile_id="P001",
                 start_time=now, target_power_kwh=50.0,
                 charged_power_kwh=0, current_power_kw=120.0,
-                charging_protocol="GB_STANDARD",
                 session_status="ACTIVE", created_at=now, updated_at=now,
             ))
             session.commit()
@@ -268,7 +267,6 @@ class TestChargingAPIBusiness:
                 session.add(Vehicle(
                     vehicle_id="VTest", user_id="UTest",
                     license_plate="京A12345", battery_capacity_kwh=60.0,
-                    charging_protocol="GB_STANDARD",
                     created_at=now, updated_at=now,
                 ))
             # 创建活跃充电会话
@@ -278,7 +276,6 @@ class TestChargingAPIBusiness:
                 car_id="京A12345", pile_id="P001",
                 start_time=now, target_power_kwh=50.0,
                 charged_power_kwh=0, current_power_kw=120.0,
-                charging_protocol="GB_STANDARD",
                 session_status="ACTIVE",
                 created_at=now, updated_at=now,
             ))
@@ -328,12 +325,12 @@ class TestBillingAPI:
 class TestPileAPI:
     """充电桩管理 API 测试"""
 
-    def test_power_on_200(self, client):
+    def test_power_on_200(self, client, admin_headers):
         """POST /api/piles/{pile_id}/power/on 返回 200"""
-        response = client.post("/api/piles/P001/power/on")
+        response = client.post("/api/piles/P001/power/on", headers=admin_headers)
         assert response.status_code == 200
 
-    def test_set_parameters_200(self, client):
+    def test_set_parameters_200(self, client, admin_headers):
         """PUT /api/piles/{pile_id}/parameters 返回 200"""
         response = client.put("/api/piles/P001/parameters", json={
             "pile_Id": "P001",
@@ -342,17 +339,17 @@ class TestPileAPI:
             "valley_price": 0.5,
             "base_service_fee": 5.0,
             "time_coefficient": 0.5,
-        })
+        }, headers=admin_headers)
         assert response.status_code == 200
 
-    def test_start_pile_200(self, client):
+    def test_start_pile_200(self, client, admin_headers):
         """POST /api/piles/{pile_id}/run 返回 200"""
-        response = client.post("/api/piles/P001/run")
+        response = client.post("/api/piles/P001/run", headers=admin_headers)
         assert response.status_code == 200
 
-    def test_power_off_200(self, client):
+    def test_power_off_200(self, client, admin_headers):
         """POST /api/piles/{pile_id}/power/off 返回 200"""
-        response = client.post("/api/piles/P001/power/off")
+        response = client.post("/api/piles/P001/power/off", headers=admin_headers)
         assert response.status_code == 200
 
     def test_query_pile_state_200(self, client):
@@ -368,6 +365,25 @@ class TestPileAPI:
         for key in ("working_state", "total_charge_num", "total_charge_time", "total_capacity"):
             assert key in data
         assert data["total_charge_num"] >= 0
+
+    def test_overview_returns_all_piles(self, client):
+        """GET /api/piles/overview 返回所有充电桩"""
+        response = client.get("/api/piles/overview")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "piles" in data
+        assert "summary" in data
+        assert len(data["piles"]) >= 2
+        for p in data["piles"]:
+            assert "pile_id" in p
+            assert "status" in p
+            assert "queue_length" in p
+
+    def test_power_on_requires_auth(self, client):
+        """未认证的管理员请求 power/on 应返回 401"""
+        response = client.post("/api/piles/P001/power/on")
+        assert response.status_code == 401
 
 
 class TestQueueAPI:
@@ -405,24 +421,31 @@ class TestStrategyAPI:
         assert "current_fault_strategy" in data
         assert "available_algorithms" in data
 
-    def test_switch_dispatch_200(self, client):
+    def test_switch_dispatch_200(self, client, admin_headers):
         """PUT /api/strategies/dispatch 返回 200"""
         response = client.put("/api/strategies/dispatch", json={
             "strategy_type": "BATCH_SHORTEST_TIME",
-        })
+        }, headers=admin_headers)
         assert response.status_code == 200
 
-    def test_switch_fault_200(self, client):
+    def test_switch_fault_200(self, client, admin_headers):
         """PUT /api/strategies/fault 返回 200"""
         response = client.put("/api/strategies/fault", json={
             "strategy_type": "PRIORITY",
-        })
+        }, headers=admin_headers)
         assert response.status_code == 200
 
-    def test_switch_invalid_returns_false(self, client):
+    def test_switch_invalid_returns_false(self, client, admin_headers):
         """切换未知策略返回 success=False"""
         response = client.put("/api/strategies/dispatch", json={
             "strategy_type": "INVALID",
-        })
+        }, headers=admin_headers)
         assert response.status_code == 200
         assert response.json()["success"] is False
+
+    def test_switch_dispatch_requires_auth(self, client):
+        """未认证的管理员切换策略应返回 401"""
+        response = client.put("/api/strategies/dispatch", json={
+            "strategy_type": "BATCH_SHORTEST_TIME",
+        })
+        assert response.status_code == 401

@@ -10,7 +10,7 @@ station:
 
 # ------------------------------------------------------------------
 # 充电桩配置
-# 每个充电桩独立配置：类型、功率、支持协议、充电位数量
+# 每个充电桩独立配置：类型、功率、充电位数量
 # 新增充电桩只需在此处添加条目，重启后自动识别
 # ------------------------------------------------------------------
 piles:
@@ -18,45 +18,30 @@ piles:
     name: "快充桩-01"
     type: fast_charge           # fast_charge | slow_charge
     max_power_kw: 120.0         # 最大输出功率（kW）
-    protocols:                  # 支持的充电协议列表
-      - GB_STANDARD
-      - CCS
     parking_spots: 2            # 充电区占用的物理停车位数量
 
   - id: "P002"
     name: "快充桩-02"
     type: fast_charge
     max_power_kw: 120.0
-    protocols:
-      - GB_STANDARD
-      - CCS
-      - CHADEMO
     parking_spots: 2
 
   - id: "P003"
     name: "慢充桩-01"
     type: slow_charge
     max_power_kw: 7.0
-    protocols:
-      - GB_STANDARD
     parking_spots: 1
 
   - id: "P004"
     name: "慢充桩-02"
     type: slow_charge
     max_power_kw: 7.0
-    protocols:
-      - GB_STANDARD
-      - CCS
     parking_spots: 1
 
   - id: "P005"
     name: "慢充桩-03"
     type: slow_charge
     max_power_kw: 11.0
-    protocols:
-      - GB_STANDARD
-      - CHADEMO
     parking_spots: 1
 
 # ------------------------------------------------------------------
@@ -122,6 +107,13 @@ monitoring:
   refresh_interval_seconds: 10  # 管理员客户端轮询刷新间隔（秒）
 
 # ------------------------------------------------------------------
+# 管理员配置
+# ------------------------------------------------------------------
+admin:
+  username: "admin"
+  password: "admin123"
+
+# ------------------------------------------------------------------
 # 日志配置
 # 日志等级：0=常规, 1=注意, 2=警告, 3=严重, 4=崩溃
 # ------------------------------------------------------------------
@@ -130,7 +122,7 @@ logging:
   # 例如设为 1（注意），则等级 ≥1 的日志既入 DB 也输出到终端；
   # 设为 4（崩溃），则仅等级 4 输出到终端；
   # 设为 -1，则所有日志仅入 DB，不输出终端
-  console_threshold: 1
+  console_threshold: 0
 
 # ------------------------------------------------------------------
 # 系统通用配置

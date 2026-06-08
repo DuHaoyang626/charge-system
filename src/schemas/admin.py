@@ -1,11 +1,26 @@
 """
 充电桩管理/策略切换 — Pydantic Schema
-对应 API: /api/piles, /api/strategies
+对应 API: /api/piles, /api/strategies, /api/admin
 """
 
 from pydantic import Field
 
 from src.schemas import ApiBaseModel
+
+
+# ── 管理员认证 ─────────────────────────────────────────
+
+class AdminLoginRequest(ApiBaseModel):
+    """管理员登录"""
+    username: str = Field(..., description="管理员用户名")
+    password: str = Field(..., description="管理员密码")
+
+
+class AdminLoginResponse(ApiBaseModel):
+    """管理员登录成功响应"""
+    success: bool = True
+    token: str
+    message: str = "管理员登录成功"
 
 
 # ── 充电桩管理 ─────────────────────────────────────────

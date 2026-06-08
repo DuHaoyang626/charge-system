@@ -5,8 +5,9 @@
 覆盖用例：UC-41（管理调度策略）、UC-42（设置启动默认）、UC-43（运行时切换）
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from src.routers.admin import require_admin
 from src.schemas.admin import (CurrentStrategiesResponse,
                                 SwitchStrategyRequest)
 from src.schemas.user import SimpleResponse
@@ -39,7 +40,8 @@ def get_current_strategies():
     return {"success": True, **status}
 
 
-@router.put("/dispatch", summary="切换分配策略", response_model=dict)
+@router.put("/dispatch", summary="切换分配策略",
+            response_model=dict, dependencies=[Depends(require_admin)])
 def switch_dispatch_strategy(body: SwitchStrategyRequest):
     """switchDispatchStrategy(strategyType)
 
@@ -64,7 +66,8 @@ def switch_dispatch_strategy(body: SwitchStrategyRequest):
     return _strategy.switch_algorithm(body.strategy_type)
 
 
-@router.put("/fault", summary="切换故障策略", response_model=dict)
+@router.put("/fault", summary="切换故障策略",
+            response_model=dict, dependencies=[Depends(require_admin)])
 def switch_fault_strategy(body: SwitchStrategyRequest):
     """switchFaultStrategy(faultType)
 

@@ -93,7 +93,7 @@ app.include_router(admin.router)
 
 def _sync_piles_from_config():
     """将 application.yml 中的充电桩配置同步到 charging_piles 表"""
-    from src.db.models import ChargingPile, PileProtocol
+    from src.db.models import ChargingPile
 
     session = get_session()
     try:
@@ -121,14 +121,6 @@ def _sync_piles_from_config():
                 )
                 session.add(pile)
                 log.info("SYSTEM", f"[注册] 新充电桩: {pile_cfg.id} ({pile_cfg.name})")
-
-            # 同步协议
-            session.query(PileProtocol).filter(
-                PileProtocol.pile_id == pile_cfg.id
-            ).delete()
-
-            for proto in pile_cfg.protocols:
-                session.add(PileProtocol(pile_id=pile_cfg.id, protocol=proto))
 
         session.commit()
     except Exception:

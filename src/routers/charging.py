@@ -130,7 +130,6 @@ def start_charging(body: StartChargingRequest):
             target_power_kwh=float(req.target_power_kwh),
             charged_power_kwh=0,
             current_power_kw=float(pile.max_power_kw),
-            charging_protocol="GB_STANDARD",
             session_status="ACTIVE",
             created_at=now, updated_at=now,
         )

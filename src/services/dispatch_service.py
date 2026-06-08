@@ -9,7 +9,7 @@
 from datetime import datetime
 
 from src.db.database import get_session
-from src.db.models import ChargingPile, ChargingRequest, ChargingSession, PileProtocol
+from src.db.models import ChargingPile, ChargingRequest, ChargingSession
 from src.enums import LogModule
 from src.services.queue_service import QueueService
 from src.utils.logger import logger
@@ -24,7 +24,7 @@ class DispatchService:
 
     @staticmethod
     def _get_compatible_piles(charge_mode: str, session) -> list:
-        """获取与充电模式兼容且状态可用的充电桩（支持 GB_STANDARD 协议）
+        """获取与充电模式兼容且状态可用的充电桩
 
         Args:
             charge_mode: FAST_CHARGE / SLOW_CHARGE
@@ -40,16 +40,7 @@ class DispatchService:
             ChargingPile.status.in_(["RUNNING", "AVAILABLE"]),
         ).all()
 
-        result = []
-        for pile in piles:
-            proto = session.query(PileProtocol).filter(
-                PileProtocol.pile_id == pile.pile_id,
-                PileProtocol.protocol == "GB_STANDARD",
-            ).first()
-            if proto:
-                result.append(pile)
-
-        return result
+        return piles
 
     @staticmethod
     def _get_wait_minutes_for_pile(pile_id: str, pile_power_kw: float,

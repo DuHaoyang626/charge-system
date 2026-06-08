@@ -84,6 +84,10 @@ class ConfigLoader:
         return self.settings.monitoring
 
     @property
+    def admin(self):
+        return self.settings.admin
+
+    @property
     def logging(self):
         return self.settings.logging
 
