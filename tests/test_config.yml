@@ -6,7 +6,7 @@
 
 station:
   name: "测试充电站"
-  max_queue_capacity: 5           # 小容量，便于测试排队区满
+  max_queue_capacity: 5
   max_waiting_capacity: 2
 
 piles:
@@ -56,13 +56,13 @@ billing:
     overtime_penalty: 0.8
 
   timeout_config:
-    charging_confirm_timeout_seconds: 10   # 短超时，便于测试超时场景
+    charging_confirm_timeout_seconds: 10
     timeout_base_fee: 5.0
 
 logging:
-  console_threshold: -1   # 测试中不输出日志到终端
+  console_threshold: -1
 
 system:
   jwt_secret: "test-secret-key"
   token_expire_minutes: 60
-  db_path: ""              # 测试时使用 :memory:
+  db_path: ""

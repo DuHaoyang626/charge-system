@@ -22,7 +22,7 @@ from src.config import config
 from src.db.database import close as close_db
 from src.db.database import get_session, init as init_db
 from src.db.database import init_db as create_tables
-from src.routers import account, auth, bills, charging, piles, queues, strategies
+from src.routers import account, admin, auth, bills, charging, payments, piles, queues, strategies
 from src.utils.logger import logger as log
 
 
@@ -32,8 +32,11 @@ from src.utils.logger import logger as log
 async def lifespan(app: FastAPI):
     """应用启动/关闭生命周期"""
     # ========== 启动阶段 ==========
-    # 1. 加载配置
-    config.load()
+    # 1. 加载配置（仅首次启动时加载，测试时 config 已由 conftest 初始化）
+    try:
+        config.settings  # 如果已加载则跳过
+    except RuntimeError:
+        config.load()
     log.init(
         console_threshold=config.logging.console_threshold,
     )
@@ -82,6 +85,8 @@ app.include_router(bills.router)
 app.include_router(piles.router)
 app.include_router(queues.router)
 app.include_router(strategies.router)
+app.include_router(payments.router)
+app.include_router(admin.router)
 
 
 # ── 辅助函数 ───────────────────────────────────────────

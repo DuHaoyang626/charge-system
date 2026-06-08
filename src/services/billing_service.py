@@ -12,11 +12,87 @@
     服务费 = 基础服务费(baseFee) + 时长系数(timeCoefficient × 充电时长)
 """
 
-from typing import Optional
+from datetime import datetime, timedelta
+
+from src.db.database import get_session
+from src.db.models import BillingRecord, ChargingPile, ChargingSession, DetailedBill, PileTariffConfig
+from src.config import config
+from src.enums import LogModule
+from src.utils.logger import logger
 
 
 class BillingService:
     """充电计费服务"""
+
+    # ------------------------------------------------------------------
+    # 内部工具方法
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _get_period(dt: datetime, periods) -> str:
+        """判断给定时间所属的计费时段
+
+        Args:
+            dt: 时间点
+            periods: TimePeriods 对象，含 peak/valley/normal 各时段列表
+
+        Returns:
+            "peak" | "normal" | "valley"
+        """
+        time_str = dt.strftime("%H:%M")
+        for name in ("peak", "valley"):
+            for r in getattr(periods, name, []):
+                if r.start <= time_str < r.end:
+                    return name
+        return "normal"
+
+    @staticmethod
+    def _generate_bill_id(session) -> str:
+        """生成账单编号  B{YYYYMMDD}{XXX}  (当日递增)"""
+        today = datetime.now().strftime("%Y%m%d")
+        count = session.query(BillingRecord).filter(
+            BillingRecord.bill_id.like(f"B{today}%")
+        ).count()
+        return f"B{today}{count + 1:03d}"
+
+    @staticmethod
+    def _get_prices(pile_id: str):
+        """获取充电桩的计费规则
+
+        优先读取 pile_tariff_configs 表的桩级独立配置，
+        若未找到则使用 config/application.yml 中的全局默认值。
+
+        Returns:
+            dict with keys: peak_price, normal_price, valley_price, base_fee, time_coefficient
+        """
+        db = get_session()
+        try:
+            tariff = (
+                db.query(PileTariffConfig)
+                .filter(PileTariffConfig.pile_id == pile_id)
+                .first()
+            )
+            if tariff:
+                return {
+                    "peak_price": float(tariff.peak_price),
+                    "normal_price": float(tariff.normal_price),
+                    "valley_price": float(tariff.valley_price),
+                    "base_fee": float(tariff.base_service_fee),
+                    "time_coefficient": float(tariff.time_coefficient),
+                }
+        finally:
+            db.close()
+
+        # 使用全局默认配置
+        dp = config.billing.default_prices
+        sf = config.billing.service_fee
+        return {
+            "peak_price": dp.peak_price,
+            "normal_price": dp.normal_price,
+            "valley_price": dp.valley_price,
+            "base_fee": sf.base_fee,
+            "time_coefficient": sf.time_coefficient,
+        }
 
     # ------------------------------------------------------------------
     # calculateBill: 充电完成后计算费用
@@ -31,57 +107,240 @@ class BillingService:
             session_id: 充电会话编号
 
         Returns:
-            {"success": True, "bill_id": "B20260607001",
-             "total_charge_fee": 45.6,       # 电费合计
-             "total_service_fee": 12.5,      # 服务费合计
-             "total_fee": 58.1,              # 总费用
-             "periods": [...]}               # 各时段明细
+            {"success": True, "bill_id": "...", "total_charge_fee": ...,
+             "total_service_fee": ..., "total_fee": ..., "periods": [...]}
 
-        Examples:
-            >>> bs = BillingService()
-            >>> bs.calculate_bill("S20260607001")
-            {"success": True, "bill_id": "B20260607001", ...}
+        Raises:
+            ValueError: 充电会话不存在
         """
-        # TODO: 真实实现
-        # 1. 查询充电会话 SELECT * FROM charging_sessions WHERE session_id=?
-        # 2. 获取该充电桩的计费规则（pile_tariff_configs 表 或 配置默认值）
-        # 3. 按充电时间跨越的时段分段：
-        #    - 遍历从 start_time 到 end_time 的每一分钟
-        #    - 判断每分钟所属时段（peak/normal/valley）
-        #    - 累计各时段的充电量（按功率积分或均匀分配）
-        # 4. 电费 = Σ(时段充电量 × 对应电价)
-        # 5. 服务费 = base_service_fee + time_coefficient × duration_minutes
-        # 6. 写入 billing_records 表 + detailed_bills 表
-        # 7. logger.info("BILLING", f"[计费] 账单生成成功 (bill_id: {bill_id}, total: {total_fee})")
-        # 8. return {"success": True, "bill_id": bill_id, ...}
-        return {
-            "success": True,
-            "bill_id": "B20260607001",
-            "session_id": session_id,
-            "charge_amount_kwh": 45.5,
-            "charge_duration_minutes": 60.0,
-            "total_charge_fee": 45.6,
-            "total_service_fee": 12.5,
-            "total_fee": 58.1,
-            "periods": [
-                {
-                    "period_name": "peak",
-                    "charge_kwh": 20.0,
-                    "unit_price": 1.2,
-                    "charge_fee": 24.0,
-                    "service_fee": 5.0,
-                    "subtotal_fee": 29.0,
-                },
-                {
-                    "period_name": "normal",
-                    "charge_kwh": 25.5,
-                    "unit_price": 0.8,
-                    "charge_fee": 20.4,
-                    "service_fee": 7.5,
-                    "subtotal_fee": 27.9,
-                },
-            ],
-        }
+        db = get_session()
+        try:
+            # ── 1. 检查是否已为该会话生成过账单（幂等性） ──────
+            existing = (
+                db.query(BillingRecord)
+                .filter(BillingRecord.session_id == session_id)
+                .first()
+            )
+            if existing:
+                return self.get_detailed_bill(existing.bill_id)
+
+            # ── 2. 查询充电会话 ────────────────────────────
+            cs = (
+                db.query(ChargingSession)
+                .filter(ChargingSession.session_id == session_id)
+                .first()
+            )
+            if not cs:
+                raise ValueError(f"充电会话不存在: {session_id}")
+
+            # ── 3. 获取计费参数 ────────────────────────────
+            prices = self._get_prices(cs.pile_id)
+            time_periods = config.billing.time_periods
+            sf_conf = config.billing.service_fee
+
+            start = cs.start_time
+            end = cs.end_time if cs.end_time else datetime.now()
+            charged_kwh = float(cs.charged_power_kwh)
+
+            duration_minutes = max((end - start).total_seconds() / 60.0, 0)
+
+            # ── 4. 生成账单编号 ────────────────────────────
+            bill_id = self._generate_bill_id(db)
+            bill_date = start.date()
+
+            # ── 5. 无充电量或零时长 → 仅基础服务费 ──────────
+            if duration_minutes == 0 or charged_kwh <= 0:
+                total_charge_fee = 0.0
+                total_service_fee = sf_conf.base_fee
+                total_fee = total_charge_fee + total_service_fee
+
+                record = BillingRecord(
+                    bill_id=bill_id,
+                    session_id=session_id,
+                    car_id=cs.car_id,
+                    date=bill_date,
+                    pile_id=cs.pile_id,
+                    charge_amount=0.0,
+                    charge_duration=0.0,
+                    start_time=start,
+                    end_time=end,
+                    total_charge_fee=0.0,
+                    total_service_fee=total_service_fee,
+                    total_fee=total_fee,
+                    payment_status="UNPAID",
+                )
+                db.add(record)
+                db.commit()
+
+                logger.info(
+                    LogModule.BILLING,
+                    f"[计费] 账单生成(空) (bill_id: {bill_id}, session: {session_id})",
+                )
+
+                return {
+                    "success": True,
+                    "bill_id": bill_id,
+                    "session_id": session_id,
+                    "car_id": cs.car_id,
+                    "pile_id": cs.pile_id,
+                    "date": bill_date.isoformat(),
+                    "charge_amount_kwh": 0.0,
+                    "charge_duration_minutes": 0.0,
+                    "start_time": start.isoformat(),
+                    "end_time": end.isoformat(),
+                    "total_charge_fee": 0.0,
+                    "total_service_fee": total_service_fee,
+                    "total_fee": total_fee,
+                    "payment_status": "UNPAID",
+                    "periods": [],
+                }
+
+            # ── 6. 分钟级遍历，累计各时段充电量 ────────────
+            rate_per_min = charged_kwh / duration_minutes  # kWh/分钟
+
+            # period_name -> {kwh, minutes, start, end}
+            period_data: dict = {}
+
+            current = start
+            while current < end:
+                minute_end = min(current + timedelta(minutes=1), end)
+                span_minutes = (minute_end - current).total_seconds() / 60.0
+
+                period = self._get_period(current, time_periods)
+
+                if period not in period_data:
+                    period_data[period] = {
+                        "kwh": 0.0,
+                        "minutes": 0.0,
+                        "start": current,
+                        "end": minute_end,
+                    }
+                else:
+                    period_data[period]["end"] = minute_end
+
+                period_data[period]["kwh"] += rate_per_min * span_minutes
+                period_data[period]["minutes"] += span_minutes
+
+                current = minute_end
+
+            # ── 7. 计算电费和服务费 ────────────────────────
+            price_map = {
+                "peak": prices["peak_price"],
+                "normal": prices["normal_price"],
+                "valley": prices["valley_price"],
+            }
+
+            # 总服务费
+            total_service_fee_value = sf_conf.base_fee + sf_conf.time_coefficient * duration_minutes
+
+            total_charge_fee = 0.0
+            periods_result = []
+
+            for period_name in ("peak", "normal", "valley"):
+                pd = period_data.get(period_name)
+                if pd is None:
+                    continue
+
+                kwh = pd["kwh"]
+                unit_price = price_map[period_name]
+                charge_fee = kwh * unit_price
+
+                # 服务费按充电量比例分摊到各时段
+                period_service_fee = total_service_fee_value * (kwh / charged_kwh)
+
+                subtotal = charge_fee + period_service_fee
+                total_charge_fee += charge_fee
+
+                periods_result.append({
+                    "period_name": period_name,
+                    "period_start": pd["start"],
+                    "period_end": pd["end"],
+                    "charge_kwh": kwh,
+                    "unit_price": unit_price,
+                    "charge_fee": charge_fee,
+                    "service_fee": period_service_fee,
+                    "subtotal_fee": subtotal,
+                })
+
+            total_fee = total_charge_fee + total_service_fee_value
+
+            # ── 8. 写入数据库 ────────────────────────────
+            record = BillingRecord(
+                bill_id=bill_id,
+                session_id=session_id,
+                car_id=cs.car_id,
+                date=bill_date,
+                pile_id=cs.pile_id,
+                charge_amount=round(charged_kwh, 2),
+                charge_duration=round(duration_minutes, 2),
+                start_time=start,
+                end_time=end,
+                total_charge_fee=round(total_charge_fee, 2),
+                total_service_fee=round(total_service_fee_value, 2),
+                total_fee=round(total_fee, 2),
+                payment_status="UNPAID",
+            )
+            db.add(record)
+            db.flush()
+
+            for p in periods_result:
+                detail = DetailedBill(
+                    bill_id=bill_id,
+                    period_name=p["period_name"],
+                    period_start=p["period_start"],
+                    period_end=p["period_end"],
+                    period_duration=round(p["charge_kwh"] / rate_per_min, 2) if rate_per_min > 0 else 0,
+                    period_charge_kwh=round(p["charge_kwh"], 2),
+                    unit_price=p["unit_price"],
+                    charge_fee=round(p["charge_fee"], 2),
+                    service_fee=round(p["service_fee"], 2),
+                    subtotal_fee=round(p["subtotal_fee"], 2),
+                )
+                db.add(detail)
+
+            db.commit()
+
+            logger.info(
+                LogModule.BILLING,
+                f"[计费] 账单生成成功 (bill_id: {bill_id}, session: {session_id}, "
+                f"total: {total_fee:.2f})",
+            )
+
+            return {
+                "success": True,
+                "bill_id": bill_id,
+                "session_id": session_id,
+                "car_id": cs.car_id,
+                "pile_id": cs.pile_id,
+                "date": bill_date.isoformat(),
+                "charge_amount_kwh": round(charged_kwh, 2),
+                "charge_duration_minutes": round(duration_minutes, 2),
+                "start_time": start.isoformat(),
+                "end_time": end.isoformat(),
+                "total_charge_fee": round(total_charge_fee, 2),
+                "total_service_fee": round(total_service_fee_value, 2),
+                "total_fee": round(total_fee, 2),
+                "payment_status": "UNPAID",
+                "periods": [
+                    {
+                        "period_name": p["period_name"],
+                        "period_start": p["period_start"].isoformat(),
+                        "period_end": p["period_end"].isoformat(),
+                        "charge_kwh": round(p["charge_kwh"], 2),
+                        "unit_price": p["unit_price"],
+                        "charge_fee": round(p["charge_fee"], 2),
+                        "service_fee": round(p["service_fee"], 2),
+                        "subtotal_fee": round(p["subtotal_fee"], 2),
+                    }
+                    for p in periods_result
+                ],
+            }
+
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
 
     # ------------------------------------------------------------------
     # queryBillByDate: 按日期查询用户账单
@@ -95,31 +354,43 @@ class BillingService:
 
         Returns:
             账单列表（可能为空数组）
-            [{"bill_id": "B20260607001", "date": "2026-06-07",
-              "charge_amount": 45.5, "total_fee": 58.1, ...}, ...]
-
-        Examples:
-            >>> bs.query_bill_by_date("京A12345", "2026-06-07")
-            [{"bill_id": "B20260607001", ...}]
         """
-        # TODO: 真实实现
-        # SELECT * FROM billing_records WHERE car_id=? AND date=? ORDER BY start_time DESC
-        return [
-            {
-                "bill_id": "B20260607001",
-                "car_id": car_id,
-                "date": date,
-                "pile_id": "P001",
-                "charge_amount": 45.5,
-                "charge_duration_minutes": 60.0,
-                "start_time": "2026-06-07T10:30:00",
-                "end_time": "2026-06-07T11:30:00",
-                "total_charge_fee": 45.6,
-                "total_service_fee": 12.5,
-                "total_fee": 58.1,
-                "payment_status": "UNPAID",
-            }
-        ]
+        db = get_session()
+        try:
+            if isinstance(date, str):
+                query_date = datetime.strptime(date, "%Y-%m-%d").date()
+            else:
+                query_date = date
+
+            records = (
+                db.query(BillingRecord)
+                .filter(
+                    BillingRecord.car_id == car_id,
+                    BillingRecord.date == query_date,
+                )
+                .order_by(BillingRecord.start_time.desc())
+                .all()
+            )
+
+            return [
+                {
+                    "bill_id": r.bill_id,
+                    "car_id": r.car_id,
+                    "date": r.date.isoformat(),
+                    "pile_id": r.pile_id,
+                    "charge_amount": float(r.charge_amount),
+                    "charge_duration_minutes": float(r.charge_duration),
+                    "start_time": r.start_time.isoformat(),
+                    "end_time": r.end_time.isoformat(),
+                    "total_charge_fee": float(r.total_charge_fee),
+                    "total_service_fee": float(r.total_service_fee),
+                    "total_fee": float(r.total_fee),
+                    "payment_status": r.payment_status,
+                }
+                for r in records
+            ]
+        finally:
+            db.close()
 
     # ------------------------------------------------------------------
     # getDetailedBill: 获取账单的时段级详单
@@ -133,44 +404,61 @@ class BillingService:
             bill_id: 账单编号
 
         Returns:
-            {"bill_id": "B20260607001", "car_id": "京A12345",
-             "periods": [{"period_name": "peak", ...}, ...]}
-
-        Examples:
-            >>> bs.get_detailed_bill("B20260607001")
-            {"bill_id": "B20260607001", ...}
+            {"bill_id": "...", "car_id": "...", "periods": [...]}
         """
-        # TODO: 真实实现
-        # SELECT * FROM detailed_bills WHERE bill_id=? ORDER BY period_start
-        return {
-            "bill_id": bill_id,
-            "car_id": "京A12345",
-            "date": "2026-06-07",
-            "pile_id": "P001",
-            "charge_amount": 45.5,
-            "charge_duration_minutes": 60.0,
-            "start_time": "2026-06-07T10:30:00",
-            "end_time": "2026-06-07T11:30:00",
-            "periods": [
+        db = get_session()
+        try:
+            record = (
+                db.query(BillingRecord)
+                .filter(BillingRecord.bill_id == bill_id)
+                .first()
+            )
+
+            if not record:
+                return {
+                    "bill_id": bill_id,
+                    "car_id": "",
+                    "date": "",
+                    "pile_id": "",
+                    "charge_amount": 0.0,
+                    "charge_duration_minutes": 0.0,
+                    "start_time": "",
+                    "end_time": "",
+                    "periods": [],
+                }
+
+            details = (
+                db.query(DetailedBill)
+                .filter(DetailedBill.bill_id == bill_id)
+                .order_by(DetailedBill.period_start)
+                .all()
+            )
+
+            periods = [
                 {
-                    "period_name": "peak",
-                    "period_start": "2026-06-07T10:30:00",
-                    "period_end": "2026-06-07T11:00:00",
-                    "charge_kwh": 20.0,
-                    "unit_price": 1.2,
-                    "charge_fee": 24.0,
-                    "service_fee": 5.0,
-                    "subtotal_fee": 29.0,
-                },
-                {
-                    "period_name": "normal",
-                    "period_start": "2026-06-07T11:00:00",
-                    "period_end": "2026-06-07T11:30:00",
-                    "charge_kwh": 25.5,
-                    "unit_price": 0.8,
-                    "charge_fee": 20.4,
-                    "service_fee": 7.5,
-                    "subtotal_fee": 27.9,
-                },
-            ],
-        }
+                    "period_name": d.period_name,
+                    "period_start": d.period_start.isoformat(),
+                    "period_end": d.period_end.isoformat(),
+                    "charge_kwh": float(d.period_charge_kwh),
+                    "unit_price": float(d.unit_price),
+                    "charge_fee": float(d.charge_fee),
+                    "service_fee": float(d.service_fee),
+                    "subtotal_fee": float(d.subtotal_fee),
+                }
+                for d in details
+            ]
+
+            return {
+                "bill_id": record.bill_id,
+                "car_id": record.car_id,
+                "date": record.date.isoformat(),
+                "pile_id": record.pile_id,
+                "charge_amount": float(record.charge_amount),
+                "charge_duration_minutes": float(record.charge_duration),
+                "start_time": record.start_time.isoformat(),
+                "end_time": record.end_time.isoformat(),
+                "periods": periods,
+                "payment_status": record.payment_status,
+            }
+        finally:
+            db.close()

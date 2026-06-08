@@ -36,7 +36,6 @@ def create_account(body: CreateAccountRequest):
     {"success": true, "user_id": "U20260001", "message": "账号创建成功"}
     ```
     """
-    # TODO: 调用 AccountService.create_account()
     result = _svc.create_account(body.car_id, body.user_name, body.car_capacity)
     return result
 
@@ -57,6 +56,15 @@ def set_password(car_id: str, body: SetPasswordRequest):
     {"success": true, "message": "密码设置成功"}
     ```
     """
-    # TODO: 需要通过 car_id 查找到 user_id，再调用 set_password
-    result = _svc.set_password(car_id, body.password)
+    from src.db.database import get_session
+    from src.db.models import User
+    session = get_session()
+    try:
+        user = session.query(User).filter(User.license_plate == car_id).first()
+        if not user:
+            return {"success": False, "message": "用户不存在"}
+        user_id = user.user_id
+    finally:
+        session.close()
+    result = _svc.set_password(user_id, body.password)
     return result

@@ -40,32 +40,58 @@ class TestAccountServiceFramework:
         assert result["success"] is False
 
 
-@pytest.mark.xfail(reason="TODO: 使用真实数据库后 user_id 应为动态生成，当前 mock 返回固定值")
 class TestAccountServiceBusiness:
-    """业务层面：依赖真实逻辑，mock 数据不满足预期"""
+    """业务层面：数据库操作验证"""
 
     def test_create_account_generates_unique_id(self, account_service):
-        """每次注册应生成不同的 user_id（格式 U2026xxxxx）"""
+        """每次注册应生成不同的 user_id"""
         r1 = account_service.create_account("京A11111", "用户A", 60.0)
         r2 = account_service.create_account("京A22222", "用户B", 60.0)
         assert r1["user_id"] != r2["user_id"]
 
     def test_create_account_links_vehicle(self, account_service):
         """注册应同时创建车辆记录"""
+        from src.db.database import get_session
+        from src.db.models import Vehicle
+
         account_service.create_account("京A12345", "张三", 60.0)
-        # TODO: mock 不会创建车辆记录，真实实现后应能查询到
-        pytest.fail("TODO: 未实现车辆记录创建 - 需要真实数据库")
+
+        session = get_session()
+        try:
+            vehicle = session.query(Vehicle).filter(
+                Vehicle.license_plate == "京A12345"
+            ).first()
+            assert vehicle is not None, "应创建车辆记录"
+            assert float(vehicle.battery_capacity_kwh) == 60.0
+        finally:
+            session.close()
 
     def test_set_password_encrypts(self, account_service):
         """密码应加密存储，不存明文"""
-        account_service.set_password("U20260001", "Abc12345")
-        # TODO: mock 不存储密码哈希，真实实现后 password_hash 应为 bcrypt 密文
-        pytest.fail("TODO: 未实现密码加密存储 - 需要真实数据库")
+        from src.db.database import get_session
+        from src.db.models import User
+
+        # 先注册
+        reg = account_service.create_account("京A12345", "张三", 60.0)
+        user_id = reg["user_id"]
+
+        # 设置密码
+        account_service.set_password(user_id, "Abc12345")
+
+        # 验证 password_hash 是 bcrypt 密文
+        session = get_session()
+        try:
+            user = session.query(User).filter(User.user_id == user_id).first()
+            assert user is not None
+            assert user.password_hash.startswith("$2b$"), "应为 bcrypt 密文"
+            assert user.account_status == "ACTIVE"
+        finally:
+            session.close()
 
     def test_authenticate_verifies_password(self, account_service):
         """正确密码应登录成功，错误密码应失败"""
-        account_service.create_account("京A12345", "张三", 60.0)
-        account_service.set_password("U20260001", "Abc12345")
+        reg = account_service.create_account("京A12345", "张三", 60.0)
+        account_service.set_password(reg["user_id"], "Abc12345")
 
         login_ok = account_service.authenticate("京A12345", "Abc12345")
         assert login_ok["success"] is True
@@ -75,4 +101,22 @@ class TestAccountServiceBusiness:
 
     def test_locked_account_cannot_login(self, account_service):
         """已锁定账号应拒绝登录"""
-        pytest.skip("需要数据库和 AccountStatus.LOCKED 支持")
+        from src.db.database import get_session
+        from src.db.models import User
+
+        reg = account_service.create_account("京A12345", "张三", 60.0)
+        account_service.set_password(reg["user_id"], "Abc12345")
+
+        # 将账号标记为 LOCKED
+        session = get_session()
+        try:
+            user = session.query(User).filter(User.user_id == reg["user_id"]).first()
+            user.account_status = "LOCKED"
+            session.commit()
+        finally:
+            session.close()
+
+        # 锁定后应登录失败
+        result = account_service.authenticate("京A12345", "Abc12345")
+        assert result["success"] is False
+        assert "已锁定" in result["message"]

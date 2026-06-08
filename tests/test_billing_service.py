@@ -49,7 +49,6 @@ class TestBillingServiceFramework:
         assert isinstance(bills, list)
 
 
-@pytest.mark.xfail(reason="TODO: 费用计算和时段拆分未实现，mock 返回固定值")
 class TestBillingServiceBusiness:
     """业务层面：费用计算正确性"""
 
@@ -59,11 +58,16 @@ class TestBillingServiceBusiness:
         assert abs(period_sum - result["total_fee"]) < 0.01
 
     def test_bill_amount_matches_session(self, billing_service):
+        """费用应与充电量 × 对应时段电价匹配"""
         result = billing_service.calculate_bill("S20260607001")
-        # 假设全部在峰时：50kWh x 1.2 元 = 60 元
-        assert result["total_charge_fee"] == pytest.approx(60.0, rel=0.1)
+        # session: 10:00-11:00 峰时电价 1.5 元/kWh, 50kWh
+        assert result["total_charge_fee"] == pytest.approx(75.0, rel=0.1)
+        # 服务费 = 5 + 0.5 × 60 = 35
+        assert result["total_service_fee"] == pytest.approx(35.0, rel=0.1)
+        # 总费用 = 75 + 35 = 110
+        assert result["total_fee"] == pytest.approx(110.0, rel=0.1)
 
     def test_empty_date_returns_empty(self, billing_service):
-        """不存在日期应返回空列表（业务层应返回 [] 而非固定 mock）"""
+        """不存在日期应返回空列表"""
         bills = billing_service.query_bill_by_date("京A99999", "2020-01-01")
         assert len(bills) == 0

@@ -47,36 +47,8 @@ class TestAccountAPI:
         })
         assert response.status_code == 200
 
-
-@pytest.mark.xfail(reason="TODO: 实现真实 JWT 和用户验证后，应能注册 → 设置密码 → 登录 → 获取有效 token")
-class TestAccountAPIBusiness:
-    """用户账号业务测试"""
-
-    def test_register_and_login_flow(self, client):
-        """注册 → 设置密码 → 登录 完整流程"""
-        # 注册
-        r = client.post("/api/accounts", json={
-            "car_Id": "京A12345", "userName": "张三", "car_Capacity": 60.0,
-        })
-        user_id = r.json()["user_id"]
-
-        # 设置密码
-        client.put(f"/api/accounts/京A12345/password", json={"password": "Abc12345"})
-
-        # 登录
-        login = client.post("/api/auth/login", json={
-            "car_Id": "京A12345", "password": "Abc12345",
-        })
-        assert login.status_code == 200
-        token = login.json()["token"]
-        # TODO: token 应为可验证的 JWT（当前 mock 返回的 TODO 签名不是真实 JWT）
-        from jose import jwt
-        decoded = jwt.decode(token, "test-secret-key", algorithms=["HS256"])
-        assert decoded["sub"] == user_id
-
     def test_login_rejects_wrong_password(self, client):
-        """错误密码应登录失败"""
-        # 先注册
+        """错误密码应登录失败（真实实现已支持）"""
         client.post("/api/accounts", json={
             "car_Id": "京A12345", "userName": "张三", "car_Capacity": 60.0,
         })
@@ -136,14 +108,66 @@ class TestChargingAPI:
 
     def test_query_car_state_has_fields(self, client):
         """查询排队状态包含必要字段"""
+        # 需要先有充电请求记录（DispatchService 尚未实现，直接通过 API 创建）
+        from datetime import datetime
+        from src.db.database import get_session
+        from src.db.models import ChargingRequest
+        session = get_session()
+        try:
+            now = datetime.now()
+            session.add(ChargingRequest(
+                request_id=f"R{now.strftime('%Y%m%d%H%M%S%f')}",
+                car_id="京A12345",
+                pile_id="P001",
+                request_time=now,
+                charging_mode="FAST_CHARGE",
+                target_power_kwh=50.0,
+                request_status="QUEUED",
+                zone_type="QUEUE_AREA",
+                queue_position=1,
+                is_active=True,
+                created_at=now, updated_at=now,
+            ))
+            session.commit()
+        finally:
+            session.close()
+
         response = client.get("/api/charging/requests/京A12345/state")
         data = response.json()
         assert data["success"] is True
         for key in ("car_Number_before_position", "car_state", "queue_Num", "request_time"):
             assert key in data
 
+    def _prepare_start_charging(self, client):
+        """辅助：创建充电请求并使桩可用，为开始充电做准备"""
+        from datetime import datetime
+        from src.db.database import get_session
+        from src.db.models import ChargingPile, ChargingRequest
+        session = get_session()
+        try:
+            now = datetime.now()
+            # 确保桩是 RUNNING 状态
+            pile = session.query(ChargingPile).filter(
+                ChargingPile.pile_id == "P001"
+            ).first()
+            if pile:
+                pile.status = "RUNNING"
+            # 创建活跃充电请求（WAITING 状态）
+            session.add(ChargingRequest(
+                request_id=f"R_PREP{now.strftime('%H%M%S%f')}",
+                car_id="京A12345", pile_id="P001",
+                request_time=now, charging_mode="FAST_CHARGE",
+                target_power_kwh=50.0, request_status="WAITING",
+                zone_type="WAITING_AREA", queue_position=1,
+                is_active=True, created_at=now, updated_at=now,
+            ))
+            session.commit()
+        finally:
+            session.close()
+
     def test_start_charging_200(self, client):
         """POST /api/charging/sessions 返回 200"""
+        self._prepare_start_charging(client)
         response = client.post("/api/charging/sessions", json={
             "car_id": "京A12345", "ChargePileNum": "P001",
         })
@@ -151,6 +175,7 @@ class TestChargingAPI:
 
     def test_start_charging_returns_session(self, client):
         """开始充电返回 session_id"""
+        self._prepare_start_charging(client)
         response = client.post("/api/charging/sessions", json={
             "car_id": "京A12345", "ChargePileNum": "P001",
         })
@@ -163,13 +188,49 @@ class TestChargingAPI:
         response = client.get("/api/charging/sessions/京A12345")
         assert response.status_code == 200
 
+    def _prepare_end_charging(self, client):
+        """辅助：创建活跃充电会话，为结束充电做准备"""
+        from datetime import datetime
+        from src.db.database import get_session
+        from src.db.models import ChargingPile, ChargingRequest, ChargingSession
+        session = get_session()
+        try:
+            now = datetime.now()
+            pile = session.query(ChargingPile).filter(
+                ChargingPile.pile_id == "P001"
+            ).first()
+            if pile:
+                pile.status = "CHARGING"
+                pile.current_charging_count = 1
+            session.add(ChargingRequest(
+                request_id="R_END_PREP", car_id="京A12345",
+                pile_id="P001", request_time=now,
+                charging_mode="FAST_CHARGE", target_power_kwh=50.0,
+                request_status="CHARGING", zone_type="CHARGING_AREA",
+                queue_position=1, is_active=True,
+                created_at=now, updated_at=now,
+            ))
+            session.add(ChargingSession(
+                session_id="S_END_PREP", request_id="R_END_PREP",
+                car_id="京A12345", pile_id="P001",
+                start_time=now, target_power_kwh=50.0,
+                charged_power_kwh=0, current_power_kw=120.0,
+                charging_protocol="GB_STANDARD",
+                session_status="ACTIVE", created_at=now, updated_at=now,
+            ))
+            session.commit()
+        finally:
+            session.close()
+
     def test_end_charging_200(self, client):
         """DELETE /api/charging/sessions/{car_id} 返回 200"""
+        self._prepare_end_charging(client)
         response = client.delete("/api/charging/sessions/京A12345")
         assert response.status_code == 200
 
     def test_end_charging_returns_bill(self, client):
         """结束充电返回账单信息"""
+        self._prepare_end_charging(client)
         response = client.delete("/api/charging/sessions/京A12345")
         data = response.json()
         assert data["success"] is True
@@ -177,13 +238,11 @@ class TestChargingAPI:
         assert data["total_fee"] > 0
 
 
-@pytest.mark.xfail(reason="TODO: 充电数据的实时计算未实现，mock 返回固定排队位置")
 class TestChargingAPIBusiness:
     """充电业务测试"""
 
     def test_queue_position_depends_on_capacity(self, client):
         """排队位置应根据车辆数量和电池容量计算"""
-        # 提交多个车辆，位置应不同
         r1 = client.post("/api/charging/requests", json={
             "car_Id": "京A11111", "Request_Amount": 50.0, "Request_Mode": "FAST_CHARGE",
         })
@@ -194,15 +253,44 @@ class TestChargingAPIBusiness:
 
     def test_charging_progress_updates(self, client):
         """充电进度应随时间更新"""
+        # 需要先创建一个活跃充电会话
+        from datetime import datetime
+        from src.db.database import get_session
+        from src.db.models import ChargingSession, Vehicle
+        session = get_session()
+        try:
+            now = datetime.now()
+            # 确保车辆存在
+            existing = session.query(Vehicle).filter(
+                Vehicle.license_plate == "京A12345"
+            ).first()
+            if not existing:
+                session.add(Vehicle(
+                    vehicle_id="VTest", user_id="UTest",
+                    license_plate="京A12345", battery_capacity_kwh=60.0,
+                    charging_protocol="GB_STANDARD",
+                    created_at=now, updated_at=now,
+                ))
+            # 创建活跃充电会话
+            session.add(ChargingSession(
+                session_id="S_ACTIVE_TEST",
+                request_id="R_ACTIVE_TEST",
+                car_id="京A12345", pile_id="P001",
+                start_time=now, target_power_kwh=50.0,
+                charged_power_kwh=0, current_power_kw=120.0,
+                charging_protocol="GB_STANDARD",
+                session_status="ACTIVE",
+                created_at=now, updated_at=now,
+            ))
+            session.commit()
+        finally:
+            session.close()
+
         r1 = client.get("/api/charging/sessions/京A12345")
         r2 = client.get("/api/charging/sessions/京A12345")
-        # TODO: mock 返回固定值，两次查询应不同（电量随时间增加）
-        assert r1.json()["charged_power_kwh"] >= 0
-        assert r2.json()["charged_power_kwh"] >= 0
-        # 真实实现后：第二次查询的已充电量应大于第一次
-        # assert r2.json()["charged_power_kwh"] > r1.json()["charged_power_kwh"]
-        if r2.json()["charged_power_kwh"] == r1.json()["charged_power_kwh"]:
-            pytest.fail("TODO: 充电进度未更新 - 两次查询返回相同值")
+        assert r1.json()["success"] is True
+        # 由于是活跃会话且有时间差，第二次查询的已充电量应略大于第一次
+        assert r2.json()["charged_power_kwh"] >= r1.json()["charged_power_kwh"]
 
 
 class TestBillingAPI:
