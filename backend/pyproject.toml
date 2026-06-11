@@ -1,0 +1,19 @@
+[project]
+name = "charge-system"
+version = "0.1.0"
+description = "智能充电桩调度计费系统"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "sqlmodel>=0.0.16",
+    "python-jose[cryptography]>=3.3",
+    "passlib[bcrypt]>=1.7",
+    "python-multipart>=0.0.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "httpx>=0.24",
+]
