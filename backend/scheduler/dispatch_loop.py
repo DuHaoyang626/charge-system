@@ -119,24 +119,82 @@ class DispatchLoop:
                         db.add(station)
 
                     from model.bill import Bill
+                    from service.billing.engine import (
+                        PriceSlot, ServiceTier,
+                        calculate_electricity_fee, calculate_service_fee,
+                    )
+                    from model.config import ElectricityPrice, ServiceFeeTier
+
                     station_name = station.name if station else ""
                     protocol_obj = db.get(Protocol, s.protocol_id)
                     protocol_name = protocol_obj.name if protocol_obj else ""
-                    electricity_fee = round(energy * 0.8, 2)
+
+                    # 充电时长（分钟）
+                    charging_minutes = 0
+                    if s.started_charging_at:
+                        seconds = (now - s.started_charging_at).total_seconds()
+                        charging_minutes = max(1, int(seconds / 60))
+
+                    # 加载电价时段
+                    price_rows = db.exec(
+                        select(ElectricityPrice).order_by(ElectricityPrice.start_time)
+                    ).all()
+                    prices = [
+                        PriceSlot(
+                            period_name=r.period_name, start_time=r.start_time,
+                            end_time=r.end_time, price_per_kwh=r.price_per_kwh,
+                        ) for r in price_rows
+                    ]
+                    # 加载服务费阶梯
+                    tier_rows = db.exec(
+                        select(ServiceFeeTier).order_by(ServiceFeeTier.min_minutes)
+                    ).all()
+                    tiers = [
+                        ServiceTier(
+                            tier_name=r.tier_name or f"{r.min_minutes}-{r.max_minutes or '∞'}分钟",
+                            min_minutes=r.min_minutes,
+                            max_minutes=r.max_minutes,
+                            rate_per_minute=r.rate_per_minute,
+                        ) for r in tier_rows
+                    ]
+
                     base_fee = station.base_service_fee if station else 5.0
+                    elec_result = calculate_electricity_fee(
+                        start_time=s.started_charging_at or now,
+                        end_time=now,
+                        total_energy_kwh=energy,
+                        prices=prices,
+                    )
+                    svc_result = calculate_service_fee(
+                        charging_minutes=charging_minutes,
+                        base_fee=base_fee,
+                        tiers=tiers,
+                    )
+
+                    electricity_fee = elec_result.total
+                    time_service_fee = round(svc_result.total - base_fee, 2)
+                    total_service_fee = svc_result.total
+
                     bill = Bill(
                         session_id=s.id, user_id=s.user_id,
                         station_id=s.station_id, station_name=station_name,
                         protocol_name=protocol_name,
+                        power_kw=protocol_obj.power_kw if protocol_obj else 0,
                         total_energy_kwh=energy,
                         electricity_fee=electricity_fee,
-                        service_fee=base_fee,
-                        total_service_fee=base_fee,
-                        total_fee=round(electricity_fee + base_fee, 2),
+                        base_service_fee=base_fee,
+                        time_service_fee=time_service_fee,
+                        service_fee=total_service_fee,
+                        total_fee=round(electricity_fee + total_service_fee, 2),
+                        charging_minutes=charging_minutes,
                         status="unpaid",
                     )
                     db.add(bill)
-                    logger.info(f"会话 {s.id} 充电完成，已生成账单")
+                    logger.info(
+                        f"会话 {s.id} 充电完成，账单 {bill.id}: "
+                        f"电费={electricity_fee}, 服务费={total_service_fee}, "
+                        f"合计={bill.total_fee}"
+                    )
 
                     if station and station.status == "stopping":
                         if (station.queue_count == 0

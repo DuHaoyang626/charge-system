@@ -30,12 +30,18 @@ class Bill(SQLModel, table=True):
 
     # 费用 (元)
     electricity_fee: float = Field(default=0)
-    service_fee: float = Field(default=0)
-    total_fee: float = Field(default=0)
+    base_service_fee: float = Field(default=0, description="基础服务费")
+    time_service_fee: float = Field(default=0, description="时长服务费（阶梯）")
+    service_fee: float = Field(default=0, description="服务费合计 = 基础 + 时长")
+    total_fee: float = Field(default=0, description="总费用 = 电费 + 服务费")
 
-    # 支付状态
+    # 支付
     status: str = Field(default="unpaid", max_length=20, description="unpaid / paid")
     paid_at: datetime | None = Field(default=None)
+    transaction_id: str | None = Field(default=None, max_length=64)
+
+    # 充电时长 (分钟)
+    charging_minutes: int = Field(default=0)
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

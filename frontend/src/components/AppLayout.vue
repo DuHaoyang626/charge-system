@@ -7,6 +7,7 @@
         <el-menu mode="horizontal" :ellipsis="false" class="nav-menu" router :default-active="route.path">
           <el-menu-item index="/">主页</el-menu-item>
           <el-menu-item index="/stations">充电桩</el-menu-item>
+          <el-menu-item index="/bills">账单</el-menu-item>
         </el-menu>
       </div>
       <div class="top-bar-right">

@@ -60,6 +60,16 @@ const router = createRouter({
           name: 'SessionProgress',
           component: () => import('@/views/session/SessionProgressView.vue'),
         },
+        {
+          path: 'bills',
+          name: 'BillsList',
+          component: () => import('@/views/bill/BillsListView.vue'),
+        },
+        {
+          path: 'bills/:id',
+          name: 'BillDetail',
+          component: () => import('@/views/bill/BillDetailView.vue'),
+        },
       ],
     },
 
