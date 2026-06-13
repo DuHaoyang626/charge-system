@@ -156,7 +156,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { User, Refresh } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
@@ -164,6 +164,7 @@ import { useStationStore } from '@/stores/station'
 import ChargingStatusBadge from '@/components/ChargingStatusBadge.vue'
 import StationStatusBadge from '@/components/StationStatusBadge.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import { POLLING_INTERVAL } from '@/utils/constants'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -173,6 +174,25 @@ const user = computed(() => auth.user)
 const activeSession = computed(() => auth.activeSession)
 const stations = computed(() => stationStore.stations)
 const loading = computed(() => stationStore.loading)
+
+let pollingTimer: ReturnType<typeof setInterval> | null = null
+
+function startPolling() {
+  stopPolling()
+  pollingTimer = setInterval(() => {
+    stationStore.fetchStations(true)  // silent refresh
+    if (auth.user) {
+      auth.fetchUserInfo()
+    }
+  }, POLLING_INTERVAL)
+}
+
+function stopPolling() {
+  if (pollingTimer) {
+    clearInterval(pollingTimer)
+    pollingTimer = null
+  }
+}
 
 const progressColor = computed(() => {
   if (!activeSession.value) return '#2563EB'
@@ -208,6 +228,11 @@ onMounted(async () => {
     await auth.fetchUserInfo()
   }
   stationStore.fetchStations()
+  startPolling()
+})
+
+onUnmounted(() => {
+  stopPolling()
 })
 </script>
 

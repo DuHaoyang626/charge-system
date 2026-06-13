@@ -22,7 +22,7 @@ export const PAYMENT_STATUS: Record<string, { label: string; color: string }> = 
 }
 
 /** 轮询间隔 (ms) — 从环境变量读取，可在 .env 中配置 */
-export const POLLING_INTERVAL = Number(import.meta.env.VITE_POLLING_INTERVAL) || 3000
+export const POLLING_INTERVAL = Number(import.meta.env.VITE_POLLING_INTERVAL) || 1000
 
 /** 轮询最大退避间隔 (ms) */
 export const POLLING_MAX_BACKOFF = 30000

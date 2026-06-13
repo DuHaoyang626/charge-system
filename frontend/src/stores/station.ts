@@ -11,8 +11,8 @@ export const useStationStore = defineStore('station', () => {
   const currentDetail = ref<StationDetail | null>(null)
   const loading = ref(false)
 
-  async function fetchStations() {
-    loading.value = true
+  async function fetchStations(silent = false) {
+    if (!silent) loading.value = true
     try {
       const res = await getStationsApi()
       const body = res.data as any

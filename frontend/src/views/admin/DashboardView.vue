@@ -134,14 +134,35 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getStationsApi, getStationDetailApi } from '@/api/station'
+import { POLLING_INTERVAL } from '@/utils/constants'
 
 const loading = ref(false)
 const rawStations = ref<any[]>([])
 const stationDetails = ref<any[]>([])
+
+let pollingTimer: ReturnType<typeof setInterval> | null = null
+
+function startPolling() {
+  stopPolling()
+  pollingTimer = setInterval(() => {
+    fetchData(true)  // silent refresh
+  }, POLLING_INTERVAL)
+}
+
+function refreshData() {
+  fetchData(false)  // with loading indicator
+}
+
+function stopPolling() {
+  if (pollingTimer) {
+    clearInterval(pollingTimer)
+    pollingTimer = null
+  }
+}
 
 // ── 实时指标（从 API 数据计算，演示环境缺少的值用默认值） ──
 const metrics = computed(() => {
@@ -180,8 +201,8 @@ const barData = [
   { label: '22时', pct: 40 },
 ]
 
-async function fetchData() {
-  loading.value = true
+async function fetchData(silent = false) {
+  if (!silent) loading.value = true
   try {
     const res = await getStationsApi()
     const body = res.data as any
@@ -206,12 +227,13 @@ async function fetchData() {
   }
 }
 
-function refreshData() {
-  fetchData()
-}
-
 onMounted(() => {
   fetchData()
+  startPolling()
+})
+
+onUnmounted(() => {
+  stopPolling()
 })
 </script>
 
