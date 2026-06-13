@@ -29,8 +29,28 @@ engine = create_engine(
 def init_db() -> None:
     """建表 + 灌初始数据（幂等，已有数据则跳过）。"""
     SQLModel.metadata.create_all(engine)
+    _migrate_schema()
     _seed_initial_data()
     logger.info("数据库初始化完成")
+
+
+def _migrate_schema() -> None:
+    """在线 schema 迁移（SQLite 不支持 ALTER ADD COLUMN IF NOT EXISTS，用 try/except 兜底）。"""
+    from sqlalchemy import text
+
+    migrations = [
+        "ALTER TABLE sessions ADD COLUMN advance_ready BOOLEAN NOT NULL DEFAULT 0",
+    ]
+    with Session(engine) as session:
+        for sql in migrations:
+            try:
+                session.execute(text(sql))
+                session.commit()
+                logger.info(f"Schema 迁移完成: {sql[:60]}...")
+            except Exception:
+                session.rollback()
+                # 列已存在即跳过（SQLite 抛 OperationalError）
+                pass
 
 
 # ──────────────────────────────────────────────

@@ -125,6 +125,7 @@ def cancel_session(session_id: int, user_id: int) -> dict:
         db_session.zone = None
         db_session.cancelled_at = datetime.utcnow()
         db_session.queue_position = None
+        db_session.advance_ready = False
 
         bill_data = None
         message = "已取消，无费用"

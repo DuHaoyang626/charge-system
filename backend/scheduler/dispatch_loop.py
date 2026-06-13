@@ -6,12 +6,14 @@
     2. 每 10 秒执行一次 tick
     3. 每个 tick 分三步：推进充电 → 排队→等待 → 等待→充电
     4. FastAPI 关闭时 dispatch_loop.stop()
+
+充电推进使用增量累加：每次 tick 计算自上次以来的增量能量，
+即使中途切换协议也不会丢失已有进度。
 """
 
 import asyncio
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING
 
 from sqlmodel import Session, select
 
@@ -21,13 +23,9 @@ from model.schedule_log import ScheduleLog
 from model.session import ChargingSession
 from model.station import Station
 
-if TYPE_CHECKING:
-    pass
-
 logger = logging.getLogger("dispatch_loop")
 
-# 常量
-DISPATCH_INTERVAL = 10  # 调度间隔（秒）
+DISPATCH_INTERVAL = 10
 
 
 class DispatchLoop:
@@ -36,15 +34,15 @@ class DispatchLoop:
     def __init__(self):
         self._task: asyncio.Task | None = None
         self._running = False
+        # 记录每个 charging 会话的上次 tick 时间（用于增量电量计算）
+        self._last_tick: dict[int, datetime] = {}
 
     async def start(self):
-        """启动调度循环。"""
         self._running = True
         self._task = asyncio.create_task(self._loop())
         logger.info("自动调度循环已启动 (间隔 10s)")
 
     async def stop(self):
-        """停止调度循环。"""
         self._running = False
         if self._task:
             self._task.cancel()
@@ -55,7 +53,6 @@ class DispatchLoop:
         logger.info("自动调度循环已停止")
 
     async def _loop(self):
-        """调度主循环。"""
         while self._running:
             try:
                 await self._tick()
@@ -64,38 +61,51 @@ class DispatchLoop:
             await asyncio.sleep(DISPATCH_INTERVAL)
 
     async def _tick(self):
-        """单次调度 tick — 按顺序执行三个步骤。"""
         await self._tick_charging()
         await self._dispatch_queue_to_waiting()
         await self._dispatch_waiting_to_charging()
 
     # ──────────────────────────────────────────────
-    # 步骤 1：推进充电进度
+    # 步骤 1：推进充电进度（增量累加）
     # ──────────────────────────────────────────────
 
     async def _tick_charging(self):
-        """扫描所有 charging 会话，推进电量，检测完成。"""
-        with Session(engine) as db:
+        """扫描所有 charging 会话，增量推进电量。
+
+        每次 tick 只计算自上次 tick 以来的增量和，不重新从 0 算。
+        这样即使中途切换协议（功率变化），已有进度也不会丢失。
+        """
+        now = datetime.utcnow()
+        sessions_added = set()
+
+        with Session(engine, expire_on_commit=False) as db:
             sessions = db.exec(
                 select(ChargingSession).where(ChargingSession.status == "charging")
             ).all()
-            now = datetime.utcnow()
 
             for s in sessions:
                 if not s.started_charging_at or not s.protocol_id:
                     continue
 
-                # 获取协议功率
                 protocol = db.get(Protocol, s.protocol_id)
                 if not protocol:
                     continue
 
-                # 计算已充电量
-                elapsed_h = (now - s.started_charging_at).total_seconds() / 3600
-                energy = round(protocol.power_kw * elapsed_h, 2)
+                # 增量时间：自上次 tick 或开始时间以来的秒数
+                last_check = self._last_tick.get(s.id)
+                if last_check is None:
+                    # 首次：从 started_charging_at 算到 now
+                    delta_h = (now - s.started_charging_at).total_seconds() / 3600
+                    base = 0.0
+                else:
+                    delta_h = (now - last_check).total_seconds() / 3600
+                    base = s.charged_energy_kwh or 0.0
+
+                # 增量能量
+                increment = round(protocol.power_kw * delta_h, 2)
+                energy = round(base + increment, 2)
 
                 if energy >= s.requested_energy_kwh:
-                    # 充满 → 自动完成
                     energy = s.requested_energy_kwh
                     s.status = "completed"
                     s.zone = None
@@ -103,34 +113,31 @@ class DispatchLoop:
                     s.charged_energy_kwh = energy
                     db.add(s)
 
-                    # 减少充电桩计数
                     station = db.get(Station, s.station_id)
                     if station:
                         station.charging_count = max(0, station.charging_count - 1)
                         db.add(station)
 
-                    # 生成账单
                     from model.bill import Bill
-
                     station_name = station.name if station else ""
+                    protocol_obj = db.get(Protocol, s.protocol_id)
+                    protocol_name = protocol_obj.name if protocol_obj else ""
+                    electricity_fee = round(energy * 0.8, 2)
+                    base_fee = station.base_service_fee if station else 5.0
                     bill = Bill(
-                        session_id=s.id,
-                        user_id=s.user_id,
-                        station_id=s.station_id,
-                        station_name=station_name,
+                        session_id=s.id, user_id=s.user_id,
+                        station_id=s.station_id, station_name=station_name,
+                        protocol_name=protocol_name,
                         total_energy_kwh=energy,
-                        electricity_fee=0,
-                        service_fee=0,
-                        total_service_fee=0,
-                        total_fee=0,
+                        electricity_fee=electricity_fee,
+                        service_fee=base_fee,
+                        total_service_fee=base_fee,
+                        total_fee=round(electricity_fee + base_fee, 2),
                         status="unpaid",
                     )
                     db.add(bill)
-                    logger.info(
-                        f"会话 {s.id} 充电完成，已生成账单"
-                    )
+                    logger.info(f"会话 {s.id} 充电完成，已生成账单")
 
-                    # 检查该桩是否可以 stopping → stopped
                     if station and station.status == "stopping":
                         if (station.queue_count == 0
                                 and station.waiting_count == 0
@@ -138,73 +145,93 @@ class DispatchLoop:
                             station.status = "stopped"
                             db.add(station)
                             logger.info(f"充电桩 {station.name} 队列已清空，自动停止")
+
+                    # 完成后移除跟踪
+                    self._last_tick.pop(s.id, None)
                 else:
-                    # 更新已充电量
                     s.charged_energy_kwh = energy
                     db.add(s)
+                    sessions_added.add(s.id)
+                    self._last_tick[s.id] = now
 
             db.commit()
+
+        # 清理不在 charging 状态的残留记录
+        active_ids = {s.id for s in sessions}
+        for sid in list(self._last_tick.keys()):
+            if sid not in active_ids:
+                self._last_tick.pop(sid, None)
 
     # ──────────────────────────────────────────────
     # 步骤 2：排队区 → 等待区
     # ──────────────────────────────────────────────
 
     async def _dispatch_queue_to_waiting(self):
-        """每个桩：等待区有空位则将排队区队首移入。"""
-        with Session(engine) as db:
+        with Session(engine, expire_on_commit=False) as db:
             stations = db.exec(
                 select(Station).where(Station.status.in_(["running", "stopping"]))
             ).all()
 
             for station in stations:
-                moved = False
-                while (
-                    station.waiting_count < station.waiting_capacity
-                    and station.queue_count > 0
-                ):
-                    # 取排队区队首
-                    session = db.exec(
-                        select(ChargingSession)
-                        .where(
-                            ChargingSession.station_id == station.id,
-                            ChargingSession.zone == "queue",
-                            ChargingSession.status == "queued",
-                        )
-                        .order_by(ChargingSession.queue_position)
-                        .limit(1)
-                    ).first()
+                if station.queue_count == 0:
+                    continue
 
-                    if not session:
-                        break
+                # 取排队区队首一个未标记的会话
+                session = db.exec(
+                    select(ChargingSession)
+                    .where(
+                        ChargingSession.station_id == station.id,
+                        ChargingSession.zone == "queue",
+                        ChargingSession.status == "queued",
+                        ChargingSession.advance_ready == False,
+                    )
+                    .order_by(ChargingSession.queue_position)
+                    .limit(1)
+                ).first()
 
+                if not session:
+                    continue
+
+                has_charging_slot = station.charging_count < station.charging_capacity
+                waiting_was_empty = station.waiting_count == 0
+                both_free = has_charging_slot and waiting_was_empty
+
+                if both_free and station.waiting_count < station.waiting_capacity:
+                    # ── 两区都空 → 自动推进 queue→waiting → 标记充电确认 ──
                     new_position = station.waiting_count + 1
-
-                    # 更新会话
                     session.status = "waiting"
                     session.zone = "waiting"
                     session.entered_waiting_at = datetime.utcnow()
                     session.queue_position = new_position
                     db.add(session)
 
-                    # 更新桩计数
                     station.queue_count = max(0, station.queue_count - 1)
                     station.waiting_count += 1
                     db.add(station)
 
-                    # 记录调度日志
                     db.add(ScheduleLog(
                         session_id=session.id,
-                        from_station_id=station.id,
-                        to_station_id=station.id,
-                        from_zone="queue",
-                        to_zone="waiting",
+                        from_station_id=station.id, to_station_id=station.id,
+                        from_zone="queue", to_zone="waiting",
                         triggered_by="system",
                     ))
 
-                    moved = True
+                    # 检查该会话是否有兼容协议，有则直接标记充电确认
+                    if self._best_match(db, session, station):
+                        session.advance_ready = True
+                        logger.info(
+                            f"会话 {session.id} 两区空闲→自动进入等待区，标记充电确认"
+                        )
+                    db.commit()
 
-                if moved:
-                    db.flush()
+                elif station.waiting_count < station.waiting_capacity:
+                    # ── 仅等待区有空 → 标记排队确认 ──
+                    session.advance_ready = True
+                    db.add(session)
+                    db.commit()
+                    logger.info(f"会话 {session.id} 标记为就绪（排队→等待）")
+                    # 每次 tick 只处理一个，避免连续弹出多个等待确认
+                    break
 
             db.commit()
 
@@ -213,117 +240,78 @@ class DispatchLoop:
     # ──────────────────────────────────────────────
 
     async def _dispatch_waiting_to_charging(self):
-        """每个桩：充电区有空位则将等待区队首移入。"""
-        with Session(engine) as db:
+        with Session(engine, expire_on_commit=False) as db:
             stations = db.exec(
                 select(Station).where(Station.status == "running")
             ).all()
 
             for station in stations:
-                moved = False
-                while (
-                    station.charging_count < station.charging_capacity
-                    and station.waiting_count > 0
-                ):
-                    # 取等待区队首
-                    session = db.exec(
-                        select(ChargingSession)
-                        .where(
-                            ChargingSession.station_id == station.id,
-                            ChargingSession.zone == "waiting",
-                            ChargingSession.status == "waiting",
-                        )
-                        .order_by(ChargingSession.queue_position)
-                        .limit(1)
-                    ).first()
+                if station.charging_count >= station.charging_capacity:
+                    continue
+                if station.waiting_count == 0:
+                    continue
 
-                    if not session:
-                        break
+                # 取等待区队首一个未标记的会话
+                session = db.exec(
+                    select(ChargingSession)
+                    .where(
+                        ChargingSession.station_id == station.id,
+                        ChargingSession.zone == "waiting",
+                        ChargingSession.status == "waiting",
+                        ChargingSession.advance_ready == False,
+                    )
+                    .order_by(ChargingSession.queue_position)
+                    .limit(1)
+                ).first()
 
-                    # 自动匹配最佳协议
-                    protocol = self._best_match(db, session, station)
-                    if not protocol:
-                        # 无兼容协议，跳过此辆（保留在等待区）
-                        logger.warning(
-                            f"会话 {session.id} 无兼容协议，跳过"
-                        )
-                        # 将其移到最后，避免阻塞
-                        session.queue_position = station.waiting_count + 1
-                        db.add(session)
-                        break
+                if not session:
+                    continue
 
-                    # 移入充电区
-                    session.status = "charging"
-                    session.zone = "charging"
-                    session.protocol_id = protocol.id
-                    session.started_charging_at = datetime.utcnow()
-                    session.queue_position = None
+                protocol = self._best_match(db, session, station)
+                if not protocol:
+                    # 无兼容协议 → 重新排位
+                    session.queue_position = station.waiting_count + 1
                     db.add(session)
-
-                    # 更新桩计数
-                    station.waiting_count = max(0, station.waiting_count - 1)
-                    station.charging_count += 1
-                    db.add(station)
-
-                    # 记录调度日志
-                    db.add(ScheduleLog(
-                        session_id=session.id,
-                        from_station_id=station.id,
-                        to_station_id=station.id,
-                        from_zone="waiting",
-                        to_zone="charging",
-                        triggered_by="system",
-                        detail=f"协议: {protocol.name} ({protocol.power_kw}kW)",
-                    ))
-
-                    moved = True
-
-                if moved:
                     db.flush()
+                    continue
+
+                # 标记为就绪，等待用户确认
+                session.advance_ready = True
+                db.add(session)
+                logger.info(
+                    f"会话 {session.id} 标记为就绪（等待→充电），"
+                    f"推荐协议: {protocol.name} ({protocol.power_kw}kW)"
+                )
+                # 每次 tick 只处理一个
+                break
 
             db.commit()
 
     # ──────────────────────────────────────────────
-    # 辅助方法：最佳协议匹配
+    # 辅助方法
     # ──────────────────────────────────────────────
 
     def _best_match(self, db: Session, session: ChargingSession, station: Station) -> Protocol | None:
-        """
-        选择兼容的最高功率协议。
-
-        取用户的充电协议列表 ∩ 充电桩支持协议列表，选功率最高的。
-        """
         from model.user_protocol import UserProtocol
+        from model.station import StationProtocol
 
-        # 用户支持的协议
         up_rows = db.exec(
             select(UserProtocol).where(UserProtocol.user_id == session.user_id)
         ).all()
-        user_protocol_ids = {up.protocol_id for up in up_rows}
-
-        # 充电桩支持的协议
-        sp_rows = db.exec(
-            select(Station.station_protocols)  # This won't work, use StationProtocol
-        ).all() if False else []
-
-        # 正确方式：查询 StationProtocol
-        from model.station import StationProtocol
+        user_ids = {up.protocol_id for up in up_rows}
 
         sp_rows = db.exec(
             select(StationProtocol).where(StationProtocol.station_id == station.id)
         ).all()
-        station_protocol_ids = {sp.protocol_id for sp in sp_rows}
+        station_ids = {sp.protocol_id for sp in sp_rows}
 
-        # 取交集
-        compatible_ids = user_protocol_ids & station_protocol_ids
-        if not compatible_ids:
+        compatible = user_ids & station_ids
+        if not compatible:
             return None
 
-        # 取功率最高的协议
         protocols = db.exec(
             select(Protocol)
-            .where(Protocol.id.in_(compatible_ids))
+            .where(Protocol.id.in_(compatible))
             .order_by(Protocol.power_kw.desc())
         ).all()
-
         return protocols[0] if protocols else None

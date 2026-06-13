@@ -8,17 +8,6 @@ export interface CreateSessionRequest {
   protocolIds: number[]
 }
 
-export interface CreateSessionResponse {
-  sessionId: number
-  status: string
-  zone: string
-  queuePosition: number
-  station: { id: number; name: string }
-  requestedEnergyKwh: number
-  estimatedWaitMinutes: number
-  createdAt: string
-}
-
 export function createSessionApi(data: CreateSessionRequest) {
   return api.post('/sessions', data)
 }
@@ -37,4 +26,24 @@ export function switchStationApi(id: number, targetStationId: number) {
 
 export function cancelSessionApi(id: number) {
   return api.post(`/sessions/${id}/cancel`)
+}
+
+export function confirmChargingApi(id: number, data: { action: string; protocolId?: number; requestedEnergyKwh?: number }) {
+  return api.post(`/sessions/${id}/confirm-charging`, data)
+}
+
+export function updateEnergyApi(id: number, requestedEnergyKwh: number) {
+  return api.put(`/sessions/${id}/energy`, { requestedEnergyKwh })
+}
+
+export function getProtocolOptionsApi(id: number) {
+  return api.get(`/sessions/${id}/protocol-options`)
+}
+
+export function updateProtocolApi(id: number, protocolIds: number[]) {
+  return api.put(`/sessions/${id}/protocol`, { protocolIds })
+}
+
+export function stopChargingApi(id: number) {
+  return api.post(`/sessions/${id}/stop-charging`)
 }

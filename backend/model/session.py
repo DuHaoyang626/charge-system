@@ -37,6 +37,9 @@ class ChargingSession(SQLModel, table=True):
     requested_energy_kwh: float = Field(description="请求充电量 (kWh)")
     charged_energy_kwh: float = Field(default=0, description="已充电量 (kWh)")
 
+    # 调度就绪标记
+    advance_ready: bool = Field(default=False, description="是否就绪可进入下一阶段")
+
     # 排队位置
     queue_position: int | None = Field(default=None, description="排队/等待区中的位置")
 
