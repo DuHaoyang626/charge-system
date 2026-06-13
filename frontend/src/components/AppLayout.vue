@@ -4,13 +4,20 @@
     <header class="top-bar">
       <div class="top-bar-left">
         <span class="system-title">⚡ 智能充电桩</span>
+        <el-menu mode="horizontal" :ellipsis="false" class="nav-menu" router :default-active="route.path">
+          <el-menu-item index="/">主页</el-menu-item>
+          <el-menu-item index="/stations">充电桩</el-menu-item>
+        </el-menu>
       </div>
       <div class="top-bar-right">
         <template v-if="user">
           <span class="user-name">{{ user.userName }}</span>
-          <el-tag size="small" :type="user.licensePlate === 'ADMIN' ? 'danger' : 'primary'" effect="plain">
+          <el-tag size="small" :type="isAdmin ? 'danger' : 'primary'" effect="plain">
             {{ user.licensePlate }}
           </el-tag>
+          <el-button v-if="isAdmin" text size="small" @click="goToAdmin" type="danger">
+            管理后台
+          </el-button>
           <el-button text size="small" @click="handleLogout">退出</el-button>
         </template>
       </div>
@@ -25,13 +32,19 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessageBox } from 'element-plus'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 const user = computed(() => auth.user)
+const isAdmin = computed(() => auth.isAdmin)
+
+function goToAdmin() {
+  router.push('/admin/dashboard')
+}
 
 async function handleLogout() {
   try {
@@ -78,6 +91,25 @@ async function handleLogout() {
   font-size: 18px;
   font-weight: 600;
   color: #1A1A1A;
+  margin-right: 8px;
+}
+
+/* 顶栏导航菜单 */
+.nav-menu {
+  border-bottom: none !important;
+  background: transparent;
+}
+
+.nav-menu .el-menu-item {
+  font-size: 14px;
+  height: 56px;
+  line-height: 56px;
+  border-bottom: 2px solid transparent;
+}
+
+.nav-menu .el-menu-item.is-active {
+  border-bottom-color: #2563EB;
+  color: #2563EB;
 }
 
 .top-bar-right {

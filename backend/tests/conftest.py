@@ -1,27 +1,15 @@
 """
-pytest 配置 — 每次测试会话开始时重置数据库。
-确保测试环境干净，不受之前运行的残留数据影响。
+pytest 配置 — 使用临时文件 SQLite 数据库，每次测试会话自动重建。
 """
 
 import os
-from pathlib import Path
+import tempfile
 
-# 确保 data/ 目录存在
-_data_dir = Path(__file__).resolve().parent.parent / "data"
-_data_dir.mkdir(parents=True, exist_ok=True)
+# 使用临时文件作为测试数据库，避免文件锁冲突
+_tmp_dir = tempfile.mkdtemp()
+_db_path = os.path.join(_tmp_dir, "test_charge_system.db")
+os.environ["DATABASE_URL"] = f"sqlite:///{_db_path}"
 
-# 尝试删除旧数据库（可能被其他进程锁定）
-import time
-_db_path = _data_dir / "charge_system.db"
-if _db_path.exists():
-    for _ in range(3):
-        try:
-            _db_path.unlink()
-            break
-        except PermissionError:
-            time.sleep(0.5)
-    else:
-        print(f"[conftest] 无法删除旧数据库 {_db_path}，将尝试覆盖初始化")
-
+# 此时再导入 core.database 会使用新的 URL 创建 engine
 from core.database import init_db
 init_db()

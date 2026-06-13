@@ -12,11 +12,12 @@ export const useAuthStore = defineStore('auth', () => {
   // ── State ──
   const token = ref<string | null>(localStorage.getItem('token'))
   const user = ref<UserInfo | null>(_loadUser())
+  const userRole = ref<string | null>(localStorage.getItem('userRole'))
   const loading = ref(false)
 
   // ── Getters ──
   const isLoggedIn = computed(() => !!token.value)
-  const isAdmin = computed(() => user.value?.userId !== undefined && _isAdmin())
+  const isAdmin = computed(() => userRole.value === 'admin')
   const activeSession = computed(() => user.value?.activeSession ?? null)
 
   // ── Actions ──
@@ -73,14 +74,20 @@ export const useAuthStore = defineStore('auth', () => {
   function logout() {
     token.value = null
     user.value = null
+    userRole.value = null
     localStorage.removeItem('token')
     localStorage.removeItem('user')
+    localStorage.removeItem('userRole')
   }
 
   /** 从登录/注册响应恢复 session */
   function _setSession(data: LoginResponse | (RegisterResponse & { role: string })) {
     token.value = data.token
     localStorage.setItem('token', data.token)
+    if ('role' in data) {
+      userRole.value = data.role
+      localStorage.setItem('userRole', data.role)
+    }
     // 立即获取用户信息
     fetchUserInfo()
   }
@@ -91,21 +98,6 @@ export const useAuthStore = defineStore('auth', () => {
       return raw ? JSON.parse(raw) : null
     } catch {
       return null
-    }
-  }
-
-  function _isAdmin(): boolean {
-    try {
-      const raw = localStorage.getItem('user')
-      if (!raw) return false
-      const u = JSON.parse(raw) as UserInfo
-      // 管理员判断：无 activeSession 逻辑 + 通过额外字段
-      // 实际 role 在 login 时返回，但 users/me 不返回 role
-      // 临时方案：检查 licensePlate === 'ADMIN'
-      // 后续可扩展
-      return u.licensePlate === 'ADMIN'
-    } catch {
-      return false
     }
   }
 
