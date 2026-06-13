@@ -235,27 +235,34 @@ def stop_station(station_id: int) -> dict:
 
 def emergency_stop_station(station_id: int, algorithm: str = "shortest_time_single",
                            exclude_station_ids: list[int] | None = None) -> dict:
-    """异常停止充电桩（骨架实现，完整调度逻辑在阶段 7 完善）。"""
+    """异常停止充电桩 — 重新调度排队/等待车辆到其他桩。"""
+    from service.dispatch.strategy import ShortestTimeSingleStrategy
+
     with Session(engine) as db:
         station = db.get(Station, station_id)
         if station is None:
             raise AppException(*Err.STATION_NOT_FOUND)
 
-        # 查询排队和等待区的会话
-        queue_sessions = db.exec(
-            select(ChargingSession).where(
-                ChargingSession.station_id == station_id,
-                ChargingSession.status.in_(["queued", "waiting"]),
-            )
-        ).all()
+        station_name = station.name
 
-        # 查询充电中的会话
-        charging_sessions = db.exec(
-            select(ChargingSession).where(
-                ChargingSession.station_id == station_id,
-                ChargingSession.status == "charging",
-            )
-        ).all()
+        # 查询排队和等待区的会话（收集 ID，避免 detached 后访问属性）
+        queue_session_ids = [
+            r.id for r in db.exec(
+                select(ChargingSession).where(
+                    ChargingSession.station_id == station_id,
+                    ChargingSession.status.in_(["queued", "waiting"]),
+                )
+            ).all()
+        ]
+
+        charging_session_ids = [
+            r.id for r in db.exec(
+                select(ChargingSession).where(
+                    ChargingSession.station_id == station_id,
+                    ChargingSession.status == "charging",
+                )
+            ).all()
+        ]
 
         # 更新状态为 error
         station.status = "error"
@@ -263,19 +270,40 @@ def emergency_stop_station(station_id: int, algorithm: str = "shortest_time_sing
         db.add(station)
         db.commit()
 
-        return {
-            "message": "紧急停止已触发",
-            "status": "error",
-            "algorithm": algorithm,
-            "redistributedSessions": [
-                {"sessionId": s.id, "fromStation": station.name, "message": "待重新调度"}
-                for s in queue_sessions
-            ],
-            "chargingSessions": [
-                {"sessionId": s.id, "message": "继续充电到完成"}
-                for s in charging_sessions
-            ],
-        }
+    # 执行重新调度 — 所有车辆（排队/等待/充电中）一起重调度
+    all_session_ids = queue_session_ids + charging_session_ids
+    strategy = ShortestTimeSingleStrategy()
+    result = strategy.redistribute(
+        session_ids=all_session_ids,
+        exclude_station_id=station_id,
+        exclude_station_ids=exclude_station_ids,
+    )
+
+    total = len(all_session_ids)
+    moved_count = len(result.moved_sessions)
+
+    return {
+        "message": f"紧急停止完成，{moved_count}/{total} 辆已重调度",
+        "status": "error",
+        "algorithm": algorithm,
+        "redistributedSessions": [
+            {
+                "sessionId": m["sessionId"],
+                "fromStation": station_name,
+                "toStation": m["toStationName"],
+                "newPosition": m["newPosition"],
+            }
+            for m in result.moved_sessions
+        ],
+        "failedSessions": [
+            {
+                "sessionId": f["sessionId"],
+                "fromStation": station_name,
+                "reason": f["reason"],
+            }
+            for f in result.failed_sessions
+        ],
+    }
 
 
 # ──────────────────────────────────────────────

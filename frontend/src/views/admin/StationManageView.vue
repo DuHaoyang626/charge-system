@@ -36,7 +36,7 @@
             <span v-if="!row.supportedProtocols?.length" class="no-data">--</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="240" fixed="right">
+        <el-table-column label="操作" width="300" fixed="right">
           <template #default="{ row }">
             <el-button size="small" text @click="openEdit(row)">编辑</el-button>
             <el-button
@@ -46,6 +46,16 @@
             >
               {{ row.status === 'running' ? '停止' : '启动' }}
             </el-button>
+            <el-popconfirm
+              v-if="row.status === 'running'"
+              title="紧急停止后排队/等待/充电中车辆全部重调度到其他桩，确定？"
+              confirm-button-text="紧急停止"
+              @confirm="handleEmergencyStop(row)"
+            >
+              <template #reference>
+                <el-button size="small" text type="danger">紧急停止</el-button>
+              </template>
+            </el-popconfirm>
             <el-popconfirm
               title="确定删除此充电桩？"
               :confirm-button-text="'删除'"
@@ -143,6 +153,7 @@ import {
   startStationApi,
   stopStationApi,
   getProtocolsApi,
+  emergencyStopStationApi,
 } from '@/api/admin/station'
 import type { ProtocolInfo } from '@/api/station'
 
@@ -279,6 +290,18 @@ async function handleToggleStatus(row: any) {
     if (err?.code !== 'cancel') {
       ElMessage.error(err?.response?.data?.message || '操作失败')
     }
+  }
+}
+
+// ── 紧急停止 ──
+async function handleEmergencyStop(row: any) {
+  try {
+    const res = await emergencyStopStationApi(row.id)
+    const data = (res.data as any).data
+    ElMessage.success(data.message || '紧急停止完成')
+    fetchStations()
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.message || '操作失败')
   }
 }
 

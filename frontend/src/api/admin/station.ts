@@ -55,3 +55,8 @@ export function stopStationApi(id: number) {
 export function getProtocolsApi() {
   return api.get('/protocols')
 }
+
+/** 紧急停止充电桩 */
+export function emergencyStopStationApi(id: number, algorithm = 'shortest_time_single') {
+  return api.post(`/admin/stations/${id}/emergency-stop`, { algorithm })
+}

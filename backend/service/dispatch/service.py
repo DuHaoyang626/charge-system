@@ -1,8 +1,10 @@
 """
 调度服务 — 最优充电桩计算。
 
-DispatchService.findBestStation()
-    筛选 running 且排队区未满的桩 → 筛选兼容用户协议的桩 → 按排队人数升序。
+find_best_station()：
+  从所有 running 且排队区未满的桩中，选择「最早可开始充电」的桩。
+  估算公式：预估等待分钟数 = (queue_count + waiting_count) × 平均充电时长 ÷ 充电位数
+  平均充电时长从该桩当前充电会话的实际目标电量估算。
 """
 
 import logging
@@ -10,26 +12,27 @@ import logging
 from sqlmodel import Session, select
 
 from core.database import engine
-from model.protocol import Protocol
+from model.session import ChargingSession
 from model.station import Station, StationProtocol
 
 logger = logging.getLogger("charge-system.dispatch")
 
+AVG_CHARGE_MINUTES = 30  # 默认平均充电时长（分钟）
+
 
 def find_best_station(user_id: int, protocol_ids: list[int]) -> Station | None:
     """
-    为充电请求选择最优充电桩。
+    为充电请求选择「最早可开始充电」的充电桩。
 
     算法：
-    1. 筛选 status = 'running' 的桩
-    2. 筛选 queue_count < queue_capacity（排队区未满）
-    3. 筛选支持用户所选协议的桩
-    4. 按排队人数升序排列，选排队最短的
+    1. 筛选 status='running' 且 queue_count < queue_capacity 的桩
+    2. 筛选兼容用户所选协议的桩
+    3. 对每个候选桩估算等待分钟数
+    4. 选等待时间最短的桩
 
-    返回 Station or None（无可用桩时）。
+    返回 Station or None。
     """
     with Session(engine) as db:
-        # 获取所有 running 的桩
         stations = db.exec(
             select(Station).where(
                 Station.status == "running",
@@ -40,33 +43,63 @@ def find_best_station(user_id: int, protocol_ids: list[int]) -> Station | None:
         if not stations:
             return None
 
-        # 获取协议 ID → 桩 ID 映射
+        # 协议 → 桩映射
         sp_rows = db.exec(
             select(StationProtocol).where(
                 StationProtocol.protocol_id.in_(protocol_ids)
             )
         ).all()
-
-        # 桩 ID → 支持的协议 ID 列表
-        station_protocols_map: dict[int, set[int]] = {}
+        station_pids: dict[int, set[int]] = {}
         for sp in sp_rows:
-            if sp.station_id not in station_protocols_map:
-                station_protocols_map[sp.station_id] = set()
-            station_protocols_map[sp.station_id].add(sp.protocol_id)
+            station_pids.setdefault(sp.station_id, set()).add(sp.protocol_id)
 
         protocol_set = set(protocol_ids)
 
-        # 筛选兼容的桩
-        compatible = [
-            s for s in stations
-            if s.id in station_protocols_map
-            and protocol_set & station_protocols_map[s.id]  # 至少一个协议匹配
-        ]
+        # 筛选兼容 + 计算等待时间
+        best = None
+        best_wait = float("inf")
 
-        if not compatible:
-            return None
+        for s in stations:
+            if s.id not in station_pids or not (protocol_set & station_pids[s.id]):
+                continue
 
-        # 按排队人数升序排列
-        compatible.sort(key=lambda s: s.queue_count)
+            wait = _estimate_wait(db, s)
+            if wait < best_wait:
+                best_wait = wait
+                best = s
 
-        return compatible[0]
+        return best
+
+
+def _estimate_wait(db: Session, station: Station) -> int:
+    """
+    估算在该桩从排队到开始充电的等待分钟数。
+
+    考虑：
+    - 当前排队和等待人数
+    - 平均充电时长（从当前充电中的会话实际目标电量估算）
+    - 充电位数
+    """
+    total_ahead = station.queue_count + station.waiting_count
+
+    # 尝试从当前充电中的会话估算实际平均充电时长
+    charging_sessions = db.exec(
+        select(ChargingSession).where(
+            ChargingSession.station_id == station.id,
+            ChargingSession.status == "charging",
+        )
+    ).all()
+
+    if charging_sessions:
+        avg_min = sum(
+            max(s.requested_energy_kwh / 60 * 60, 5)
+            for s in charging_sessions
+        ) / len(charging_sessions)
+        # 简化：假设 1kWh ≈ 1 分钟（对 DC 快充偏保守，但安全）
+        avg_min = max(avg_min, 10)
+    else:
+        avg_min = AVG_CHARGE_MINUTES
+
+    slots = max(station.charging_capacity, 1)
+    wait = (total_ahead + 1) * avg_min // slots
+    return wait
