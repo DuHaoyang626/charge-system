@@ -59,6 +59,8 @@ app.add_exception_handler(AppException, app_exception_handler)
 # ──────────────────────────────────────────────
 
 from api.auth.router import router as auth_router
+from api.users.router import router as users_router
+from api.protocols.router import router as protocol_router
 from api.stations.router import router as station_router
 from api.sessions.router import router as session_router
 from api.bills.router import router as bill_router
@@ -70,6 +72,8 @@ from api.admin.queues.router import router as admin_queue_router
 from api.admin.reports.router import router as admin_report_router
 
 app.include_router(auth_router, prefix="/api/v1")
+app.include_router(users_router, prefix="/api/v1")
+app.include_router(protocol_router, prefix="/api/v1")
 app.include_router(station_router, prefix="/api/v1")
 app.include_router(session_router, prefix="/api/v1")
 app.include_router(bill_router, prefix="/api/v1")

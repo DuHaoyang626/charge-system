@@ -146,6 +146,10 @@ def _seed_initial_data() -> None:
 # ── 延迟导入（避免循环依赖） ──
 # 在模块底部导入 model，确保 SQLModel 表类已注册到 metadata
 from model.user import User
+from model.user_protocol import UserProtocol
 from model.station import Station, StationProtocol
 from model.protocol import Protocol
+from model.session import ChargingSession
+from model.bill import Bill
 from model.config import GlobalConfig, ElectricityPrice, ServiceFeeTier
+from model.schedule_log import ScheduleLog

@@ -1,20 +1,84 @@
-# Python
+# ────────────────────────────────────
+# Python (Backend)
+# ────────────────────────────────────
+
 __pycache__/
 *.py[cod]
 *.egg-info/
+dist/
+build/
+*.egg
 .venv/
 venv/
+env/
+virtualenv/
+.pytest_cache/
+*.pyc
+*.pyo
+*.whl
 
-# IDE
+# ────────────────────────────────────
+# Node / Frontend
+# ────────────────────────────────────
+
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+
+# ────────────────────────────────────
+# Environment — 不含 .env.example
+# ────────────────────────────────────
+
+.env
+.env.local
+.env.*.local
+.env.production
+
+# ────────────────────────────────────
+# Database — 运行自动生成
+# ────────────────────────────────────
+
+*.db
+*.sqlite
+*.sqlite3
+backend/data/
+
+# ────────────────────────────────────
+# IDE / Editor
+# ────────────────────────────────────
+
 .idea/
 .vscode/
 *.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.suo
+*.ntvs*
+*.njsproj
+.history/
+*.vs/
+*.vscode/
 
-# Database (runtime generated)
-data/*.db
+# ────────────────────────────────────
+# OS
+# ────────────────────────────────────
 
-# Environment
-.env
-.env.local
-docs/作业/第二次作业/作业.pdf
-backend/data/charge_system.db
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.lnk
+
+# ────────────────────────────────────
+# Project Specific
+# ────────────────────────────────────
+
+backend/*.egg-info/
+frontend/env/.env.development  # 每人本地不同，提交 .env.example 替代
