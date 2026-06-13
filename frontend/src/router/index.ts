@@ -50,6 +50,16 @@ const router = createRouter({
           name: 'StationDetail',
           component: () => import('@/views/station/StationDetailView.vue'),
         },
+        {
+          path: 'sessions/create',
+          name: 'SessionCreate',
+          component: () => import('@/views/session/SessionCreateView.vue'),
+        },
+        {
+          path: 'sessions/:id',
+          name: 'SessionProgress',
+          component: () => import('@/views/session/SessionProgressView.vue'),
+        },
       ],
     },
 
