@@ -44,6 +44,7 @@ def _migrate_schema() -> None:
         "ALTER TABLE bills ADD COLUMN time_service_fee FLOAT NOT NULL DEFAULT 0",
         "ALTER TABLE bills ADD COLUMN transaction_id VARCHAR(64) DEFAULT NULL",
         "ALTER TABLE bills ADD COLUMN charging_minutes INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
     ]
     with Session(engine) as session:
         for sql in migrations:

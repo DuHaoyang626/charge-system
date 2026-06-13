@@ -22,6 +22,7 @@ class User(SQLModel, table=True):
     battery_capacity: float = Field(default=0, description="电池容量 (kWh)，管理员为 0")
     role: str = Field(default="user", max_length=10, description="角色: user / admin")
     balance: float = Field(default=0, description="账户余额 (分)")
+    priority: int = Field(default=0, description="优先级: 0=普通 1=VIP")
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(

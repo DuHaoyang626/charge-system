@@ -1,13 +1,43 @@
 """
-管理端 — 报表统计路由占位
+管理端 — 报表统计路由
 """
+from fastapi import APIRouter, Depends, Query
 
-from fastapi import APIRouter
+from core.deps import get_current_admin
+from core.response import resp_ok
+from service.admin.service import (
+    get_charging_volume_report,
+    get_revenue_report,
+    get_utilization_report,
+)
 
 router = APIRouter(tags=["管理端-报表"])
 
 
-@router.get("/admin/reports")
-async def admin_reports():
-    """报表统计（待实现）"""
-    return {"message": "admin_reports - 待实现"}
+@router.get("/admin/reports/charging-volume")
+async def admin_charging_volume(
+    start_date: str | None = Query(None, alias="startDate"),
+    end_date: str | None = Query(None, alias="endDate"),
+    admin_id: int = Depends(get_current_admin),
+):
+    """充电量统计。"""
+    data = get_charging_volume_report(start_date=start_date, end_date=end_date)
+    return resp_ok(data=data)
+
+
+@router.get("/admin/reports/revenue")
+async def admin_revenue(
+    start_date: str | None = Query(None, alias="startDate"),
+    end_date: str | None = Query(None, alias="endDate"),
+    admin_id: int = Depends(get_current_admin),
+):
+    """收入统计。"""
+    data = get_revenue_report(start_date=start_date, end_date=end_date)
+    return resp_ok(data=data)
+
+
+@router.get("/admin/reports/utilization")
+async def admin_utilization(admin_id: int = Depends(get_current_admin)):
+    """充电桩利用率。"""
+    data = get_utilization_report()
+    return resp_ok(data=data)

@@ -235,8 +235,8 @@ def stop_station(station_id: int) -> dict:
 
 def emergency_stop_station(station_id: int, algorithm: str = "shortest_time_single",
                            exclude_station_ids: list[int] | None = None) -> dict:
-    """异常停止充电桩 — 重新调度排队/等待车辆到其他桩。"""
-    from service.dispatch.strategy import ShortestTimeSingleStrategy
+    """异常停止充电桩 — 使用配置的算法重新调度所有车辆。"""
+    from service.dispatch.strategy import get_strategy
 
     with Session(engine) as db:
         station = db.get(Station, station_id)
@@ -245,34 +245,22 @@ def emergency_stop_station(station_id: int, algorithm: str = "shortest_time_sing
 
         station_name = station.name
 
-        # 查询排队和等待区的会话（收集 ID，避免 detached 后访问属性）
-        queue_session_ids = [
+        all_session_ids = [
             r.id for r in db.exec(
                 select(ChargingSession).where(
                     ChargingSession.station_id == station_id,
-                    ChargingSession.status.in_(["queued", "waiting"]),
+                    ChargingSession.status.in_(["queued", "waiting", "charging"]),
                 )
             ).all()
         ]
 
-        charging_session_ids = [
-            r.id for r in db.exec(
-                select(ChargingSession).where(
-                    ChargingSession.station_id == station_id,
-                    ChargingSession.status == "charging",
-                )
-            ).all()
-        ]
-
-        # 更新状态为 error
         station.status = "error"
         station.updated_at = datetime.utcnow()
         db.add(station)
         db.commit()
 
-    # 执行重新调度 — 所有车辆（排队/等待/充电中）一起重调度
-    all_session_ids = queue_session_ids + charging_session_ids
-    strategy = ShortestTimeSingleStrategy()
+    # 使用策略工厂获取对应算法实例
+    strategy = get_strategy(algorithm)
     result = strategy.redistribute(
         session_ids=all_session_ids,
         exclude_station_id=station_id,
