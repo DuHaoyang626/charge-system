@@ -30,7 +30,6 @@ class ElectricityPrice(SQLModel, table=True):
     start_time: str = Field(max_length=5, description="开始时间 HH:mm")
     end_time: str = Field(max_length=5, description="结束时间 HH:mm")
     price_per_kwh: float = Field(description="电价 (元/kWh)")
-    priority: int = Field(default=0, description="优先级，数字越小越优先匹配")
 
 
 class ServiceFeeTier(SQLModel, table=True):

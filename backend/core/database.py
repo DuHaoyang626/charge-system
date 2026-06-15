@@ -54,8 +54,16 @@ def _migrate_schema() -> None:
                 logger.info(f"Schema 迁移完成: {sql[:60]}...")
             except Exception:
                 session.rollback()
-                # 列已存在即跳过（SQLite 抛 OperationalError）
                 pass
+
+        # 删除 electricity_prices 的 priority 列（如存在）
+        try:
+            session.execute(text("ALTER TABLE electricity_prices DROP COLUMN priority"))
+            session.commit()
+            logger.info("Schema 迁移完成: DROP COLUMN priority FROM electricity_prices")
+        except Exception:
+            session.rollback()
+            pass
 
 
 # ──────────────────────────────────────────────
@@ -132,10 +140,10 @@ def _seed_initial_data() -> None:
 
         # ── 4. 电价时段 ──
         prices = [
-            ElectricityPrice(period_name="峰时", start_time="08:00", end_time="11:00", price_per_kwh=1.2, priority=1),
-            ElectricityPrice(period_name="平时", start_time="11:00", end_time="18:00", price_per_kwh=0.8, priority=2),
-            ElectricityPrice(period_name="峰时", start_time="18:00", end_time="21:00", price_per_kwh=1.2, priority=3),
-            ElectricityPrice(period_name="谷时", start_time="21:00", end_time="08:00", price_per_kwh=0.4, priority=4),
+            ElectricityPrice(period_name="峰时", start_time="08:00", end_time="11:00", price_per_kwh=1.2),
+            ElectricityPrice(period_name="平时", start_time="11:00", end_time="18:00", price_per_kwh=0.8),
+            ElectricityPrice(period_name="峰时", start_time="18:00", end_time="21:00", price_per_kwh=1.2),
+            ElectricityPrice(period_name="谷时", start_time="21:00", end_time="08:00", price_per_kwh=0.4),
         ]
         for ep in prices:
             session.add(ep)

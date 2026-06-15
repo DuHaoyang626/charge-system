@@ -26,10 +26,42 @@ BJT_OFFSET = timedelta(hours=8)
 # 配置管理
 # ═══════════════════════════════════════════
 
+def _to_minutes(t: str) -> int:
+    """将 HH:mm 转为当天分钟数。"""
+    h, m = t.split(":")
+    return int(h) * 60 + int(m)
+
+
+def _validate_prices_no_conflict(prices: list[dict]) -> None:
+    """校验电价时段无时间重叠。"""
+    # 将每个时段展开为 (start_min, end_min) 区间
+    intervals: list[tuple[int, int, str]] = []
+    for p in prices:
+        start = _to_minutes(p.get("start", ""))
+        end = _to_minutes(p.get("end", ""))
+        name = p.get("periodName", "")
+        if end <= start:
+            # 跨天时段，拆为两段检查
+            intervals.append((start, 1440, name))
+            intervals.append((0, end, name))
+        else:
+            intervals.append((start, end, name))
+
+    intervals.sort(key=lambda x: x[0])
+    for i in range(len(intervals)):
+        for j in range(i + 1, len(intervals)):
+            if intervals[j][0] < intervals[i][1]:
+                raise ValueError(
+                    f"电价时段 \"{intervals[i][2]}\" 与 \"{intervals[j][2]}\" 存在时间冲突"
+                )
+
+
 def get_all_configs() -> dict:
-    """获取全部配置。"""
+    """获取全部配置（严格遵循 API 接口说明）。"""
     with Session(engine) as db:
         configs = db.exec(select(GlobalConfig)).all()
+        config_map = {c.config_key: c.config_value for c in configs}
+
         prices = db.exec(
             select(ElectricityPrice).order_by(ElectricityPrice.start_time)
         ).all()
@@ -38,24 +70,19 @@ def get_all_configs() -> dict:
         ).all()
 
         return {
-            "globalConfigs": {
-                c.config_key: c.config_value for c in configs
-            },
+            "schedulingAlgorithm": config_map.get("scheduling_algorithm", "shortest_time_single"),
+            "baseServiceFee": float(config_map.get("base_service_fee", 5.0)),
             "electricityPrices": [
                 {
-                    "id": p.id,
                     "periodName": p.period_name,
-                    "startTime": p.start_time,
-                    "endTime": p.end_time,
+                    "start": p.start_time,
+                    "end": p.end_time,
                     "pricePerKwh": p.price_per_kwh,
-                    "priority": p.priority,
                 }
                 for p in prices
             ],
             "serviceFeeTiers": [
                 {
-                    "id": t.id,
-                    "tierName": t.tier_name or f"{t.min_minutes}-{t.max_minutes or '∞'}分钟",
                     "minMinutes": t.min_minutes,
                     "maxMinutes": t.max_minutes,
                     "ratePerMinute": t.rate_per_minute,
@@ -66,56 +93,84 @@ def get_all_configs() -> dict:
 
 
 def update_configs(data: dict) -> dict:
-    """统一更新配置。"""
+    """统一更新配置（严格遵循 API 接口说明）。"""
     with Session(engine) as db:
         now = datetime.utcnow()
 
-        # 更新全局键值配置
-        if "globalConfigs" in data:
-            for key, value in data["globalConfigs"].items():
+        # ── 顶层标量配置 ──
+        scalar_map = {
+            "schedulingAlgorithm": "scheduling_algorithm",
+            "baseServiceFee": "base_service_fee",
+        }
+        for api_key, db_key in scalar_map.items():
+            if api_key in data:
                 existing = db.exec(
-                    select(GlobalConfig).where(GlobalConfig.config_key == key)
+                    select(GlobalConfig).where(GlobalConfig.config_key == db_key)
                 ).first()
                 if existing:
-                    existing.config_value = str(value)
+                    existing.config_value = str(data[api_key])
                     existing.updated_at = now
                     db.add(existing)
 
-        # 更新电价
+        # ── 电价时段：校验冲突后全量替换 ──
         if "electricityPrices" in data:
-            for item in data["electricityPrices"]:
-                pid = item.get("id")
-                if pid:
-                    p = db.get(ElectricityPrice, pid)
-                    if p:
-                        if "periodName" in item:
-                            p.period_name = item["periodName"]
-                        if "startTime" in item:
-                            p.start_time = item["startTime"]
-                        if "endTime" in item:
-                            p.end_time = item["endTime"]
-                        if "pricePerKwh" in item:
-                            p.price_per_kwh = item["pricePerKwh"]
-                        if "priority" in item:
-                            p.priority = item["priority"]
-                        db.add(p)
+            prices_in = data["electricityPrices"]
+            if not prices_in:
+                raise ValueError("电价时段列表不能为空")
 
-        # 更新服务费阶梯
+            # 校验时间冲突
+            _validate_prices_no_conflict(prices_in)
+
+            # 校验各时段字段完整性
+            for item in prices_in:
+                if not item.get("periodName"):
+                    raise ValueError("电价时段名称不能为空")
+                if not item.get("start") or not item.get("end"):
+                    raise ValueError("电价时段起止时间不能为空")
+                if item.get("pricePerKwh") is None or item["pricePerKwh"] < 0:
+                    raise ValueError("电价必须 >= 0")
+
+            # 删除旧电价
+            old = db.exec(select(ElectricityPrice)).all()
+            for o in old:
+                db.delete(o)
+            db.flush()
+
+            # 插入新电价
+            for item in prices_in:
+                db.add(ElectricityPrice(
+                    period_name=item["periodName"],
+                    start_time=item["start"],
+                    end_time=item["end"],
+                    price_per_kwh=item["pricePerKwh"],
+                ))
+
+        # ── 服务费阶梯：全量替换 ──
         if "serviceFeeTiers" in data:
-            for item in data["serviceFeeTiers"]:
-                tid = item.get("id")
-                if tid:
-                    t = db.get(ServiceFeeTier, tid)
-                    if t:
-                        if "tierName" in item:
-                            t.tier_name = item["tierName"]
-                        if "minMinutes" in item:
-                            t.min_minutes = item["minMinutes"]
-                        if "maxMinutes" in item:
-                            t.max_minutes = item["maxMinutes"]
-                        if "ratePerMinute" in item:
-                            t.rate_per_minute = item["ratePerMinute"]
-                        db.add(t)
+            tiers_in = data["serviceFeeTiers"]
+            if not tiers_in:
+                raise ValueError("服务费阶梯列表不能为空")
+
+            for item in tiers_in:
+                if item.get("minMinutes") is None or item["minMinutes"] < 0:
+                    raise ValueError("服务费阶梯最小分钟数不能 < 0")
+                if item.get("ratePerMinute") is None or item["ratePerMinute"] < 0:
+                    raise ValueError("服务费阶梯费率不能 < 0")
+                if item.get("maxMinutes") is not None and item["maxMinutes"] <= item.get("minMinutes", 0):
+                    raise ValueError("服务费阶梯最大分钟数必须大于最小分钟数")
+
+            old_tiers = db.exec(select(ServiceFeeTier)).all()
+            for t in old_tiers:
+                db.delete(t)
+            db.flush()
+
+            for item in tiers_in:
+                db.add(ServiceFeeTier(
+                    tier_name=item.get("tierName"),
+                    min_minutes=item["minMinutes"],
+                    max_minutes=item.get("maxMinutes"),
+                    rate_per_minute=item["ratePerMinute"],
+                ))
 
         db.commit()
 

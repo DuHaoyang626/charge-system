@@ -1142,7 +1142,7 @@ GET /sessions/:id 每 3~5 秒轮询
   │
   ├─ 写入 DB: session.status = "completed", billId 关联
   │
-  └─ 等待前端下一次轮询 ──► 前端 GET /sessions/:id/progress
+  └─ 等待前端下一次轮询 ──► 前端 GET /sessions/:id
                                       │
                                       ▼
                                status: "completed"

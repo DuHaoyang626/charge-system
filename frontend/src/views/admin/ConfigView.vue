@@ -8,24 +8,23 @@
         <template #header>⚙️ 全局配置</template>
         <el-form label-position="top" size="small">
           <el-row :gutter="16">
-            <template v-for="(val, key) in config.globalConfigs" :key="key">
-              <el-col :span="8" v-if="key === 'scheduling_algorithm'">
-                <el-form-item label="调度算法">
-                  <el-select v-model="editConfigs[key]" style="width:100%">
-                    <el-option value="shortest_time_single" label="单次调度最短时长" />
-                    <el-option value="batch_shortest" label="批量调度最短总时长（匈牙利算法）" />
-                    <el-option value="priority" label="优先级调度（VIP 优先）" />
-                    <el-option value="time_order" label="时间顺序调度（FIFO）" />
-                    <el-option value="fault_recovery" label="充电中故障恢复优先" />
-                  </el-select>
-                </el-form-item>
-              </el-col>
-              <el-col :span="8" v-else>
-                <el-form-item :label="key">
-                  <el-input v-model="editConfigs[key]" />
-                </el-form-item>
-              </el-col>
-            </template>
+            <el-col :span="8">
+              <el-form-item label="调度算法">
+                <el-select v-model="editSchedulingAlgorithm" style="width:100%">
+                  <el-option value="shortest_time_single" label="单次调度最短时长" />
+                  <el-option value="batch_shortest" label="批量调度最短总时长（匈牙利算法）" />
+                  <el-option value="priority" label="优先级调度（VIP 优先）" />
+                  <el-option value="time_order" label="时间顺序调度（FIFO）" />
+                  <el-option value="fault_recovery" label="充电中故障恢复优先" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="8">
+              <el-form-item label="基础服务费（元）">
+                <el-input-number v-model="editBaseServiceFee" :min="0" :max="100" :step="0.5"
+                  :precision="2" style="width:160px" />
+              </el-form-item>
+            </el-col>
           </el-row>
         </el-form>
       </el-card>
@@ -33,59 +32,78 @@
       <!-- 电价时段 -->
       <el-card shadow="never" class="section-card">
         <template #header>⚡ 电价时段</template>
-        <el-table :data="config.electricityPrices" size="small" stripe>
-          <el-table-column label="时段名称">
+        <el-alert v-if="priceConflictError" type="warning" :title="priceConflictError" closable
+          @close="priceConflictError = ''" show-icon style="margin-bottom:12px" />
+        <el-table :data="editPrices" size="small" stripe>
+          <el-table-column label="时段名称" width="130">
             <template #default="{ row, $index }">
-              <el-input v-model="editPrices[$index].periodName" size="small" />
+              <el-input v-model="row.periodName" size="small" placeholder="如：峰时" />
             </template>
           </el-table-column>
-          <el-table-column label="开始时间" width="120">
+          <el-table-column label="开始时间" width="140">
             <template #default="{ row, $index }">
-              <el-time-picker v-model="editPrices[$index].startTimeObj" format="HH:mm" value-format="HH:mm"
-                style="width:100px" size="small" />
+              <el-time-picker v-model="row.startObj" format="HH:mm" value-format="HH:mm"
+                style="width:110px" size="small" placeholder="08:00" />
             </template>
           </el-table-column>
-          <el-table-column label="结束时间" width="120">
+          <el-table-column label="结束时间" width="140">
             <template #default="{ row, $index }">
-              <el-time-picker v-model="editPrices[$index].endTimeObj" format="HH:mm" value-format="HH:mm"
-                style="width:100px" size="small" />
+              <el-time-picker v-model="row.endObj" format="HH:mm" value-format="HH:mm"
+                style="width:110px" size="small" placeholder="11:00" />
             </template>
           </el-table-column>
           <el-table-column label="电价 (元/kWh)" width="150">
             <template #default="{ row, $index }">
-              <el-input-number v-model="editPrices[$index].pricePerKwh" :min="0" :max="10" :step="0.1"
+              <el-input-number v-model="row.pricePerKwh" :min="0" :max="10" :step="0.1"
                 :precision="2" size="small" style="width:120px" />
             </template>
           </el-table-column>
+          <el-table-column label="操作" width="80">
+            <template #default="{ $index }">
+              <el-button text type="danger" size="small" @click="removePrice($index)">删除</el-button>
+            </template>
+          </el-table-column>
         </el-table>
+        <div style="margin-top:8px">
+          <el-button size="small" @click="addPrice">+ 添加时段</el-button>
+        </div>
       </el-card>
 
       <!-- 服务费阶梯 -->
       <el-card shadow="never" class="section-card">
         <template #header>💰 服务费阶梯</template>
-        <el-table :data="config.serviceFeeTiers" size="small" stripe>
-          <el-table-column label="阶梯名称">
+        <el-table :data="editTiers" size="small" stripe>
+          <el-table-column label="阶梯名称" width="150">
             <template #default="{ row, $index }">
-              <el-input v-model="editTiers[$index].tierName" size="small" />
+              <el-input v-model="row.tierName" size="small" placeholder="如：0-60分钟" />
             </template>
           </el-table-column>
-          <el-table-column label="最小分钟" width="100">
+          <el-table-column label="最小分钟" width="120">
             <template #default="{ row, $index }">
-              {{ row.minMinutes }}
+              <el-input-number v-model="row.minMinutes" :min="0" :max="9999" size="small" style="width:100px" />
             </template>
           </el-table-column>
-          <el-table-column label="最大分钟" width="100">
+          <el-table-column label="最大分钟" width="120">
             <template #default="{ row, $index }">
-              {{ row.maxMinutes ?? '∞' }}
+              <el-input-number v-model="row.maxMinutes" :min="0" :max="99999" size="small"
+                style="width:100px" :placeholder="'∞'" :controls="false" />
             </template>
           </el-table-column>
           <el-table-column label="费率 (元/分钟)" width="150">
             <template #default="{ row, $index }">
-              <el-input-number v-model="editTiers[$index].ratePerMinute" :min="0" :max="10" :step="0.01"
+              <el-input-number v-model="row.ratePerMinute" :min="0" :max="10" :step="0.01"
                 :precision="3" size="small" style="width:120px" />
             </template>
           </el-table-column>
+          <el-table-column label="操作" width="80">
+            <template #default="{ $index }">
+              <el-button text type="danger" size="small" @click="removeTier($index)">删除</el-button>
+            </template>
+          </el-table-column>
         </el-table>
+        <div style="margin-top:8px">
+          <el-button size="small" @click="addTier">+ 添加阶梯</el-button>
+        </div>
       </el-card>
 
       <div class="save-bar">
@@ -104,55 +122,147 @@ import { getAdminConfigApi, updateAdminConfigApi } from '@/api/admin/config'
 const loading = ref(true)
 const saving = ref(false)
 const config = ref<any>(null)
+const priceConflictError = ref('')
 
 // 编辑态副本
-const editConfigs = reactive<Record<string, string>>({})
+const editSchedulingAlgorithm = ref('shortest_time_single')
+const editBaseServiceFee = ref(5.0)
 const editPrices = reactive<any[]>([])
 const editTiers = reactive<any[]>([])
+
+function _toMinutes(t: string): number {
+  const parts = t.split(':')
+  return parseInt(parts[0]) * 60 + parseInt(parts[1])
+}
+
+function _validatePricesNoConflict(prices: any[]): string | null {
+  const intervals: { start: number; end: number; name: string }[] = []
+  for (const p of prices) {
+    if (!p.start || !p.end) continue
+    const start = _toMinutes(p.start)
+    let end = _toMinutes(p.end)
+    const name = p.periodName || ''
+    if (end <= start) {
+      intervals.push({ start, end: 1440, name })
+      intervals.push({ start: 0, end, name })
+    } else {
+      intervals.push({ start, end, name })
+    }
+  }
+  intervals.sort((a, b) => a.start - b.start)
+  for (let i = 0; i < intervals.length; i++) {
+    for (let j = i + 1; j < intervals.length; j++) {
+      if (intervals[j].start < intervals[i].end) {
+        return `电价时段 "${intervals[i].name}" 与 "${intervals[j].name}" 存在时间冲突`
+      }
+    }
+  }
+  return null
+}
 
 async function fetchConfig() {
   loading.value = true
   try {
     const res = await getAdminConfigApi()
     config.value = (res.data as any).data
+    const c = config.value
 
-    // 填充编辑副本
-    Object.assign(editConfigs, config.value.globalConfigs || {})
+    // 顶层字段
+    editSchedulingAlgorithm.value = c.schedulingAlgorithm || 'shortest_time_single'
+    editBaseServiceFee.value = c.baseServiceFee ?? 5.0
+
+    // 电价
     editPrices.length = 0
-    ;(config.value.electricityPrices || []).forEach((p: any) => {
-      editPrices.push({ ...p, startTimeObj: p.startTime, endTimeObj: p.endTime })
+    ;(c.electricityPrices || []).forEach((p: any) => {
+      editPrices.push({
+        periodName: p.periodName,
+        start: p.start,
+        end: p.end,
+        pricePerKwh: p.pricePerKwh,
+        startObj: p.start,
+        endObj: p.end,
+      })
     })
+
+    // 服务费
     editTiers.length = 0
-    ;(config.value.serviceFeeTiers || []).forEach((t: any) => {
-      editTiers.push({ ...t })
+    ;(c.serviceFeeTiers || []).forEach((t: any) => {
+      editTiers.push({
+        tierName: '',
+        minMinutes: t.minMinutes,
+        maxMinutes: t.maxMinutes,
+        ratePerMinute: t.ratePerMinute,
+      })
     })
   } catch (err: any) {
     ElMessage.error(err?.response?.data?.message || '加载配置失败')
   } finally { loading.value = false }
 }
 
+function addPrice() {
+  editPrices.push({
+    periodName: '',
+    start: '00:00',
+    end: '01:00',
+    pricePerKwh: 0.8,
+    startObj: '00:00',
+    endObj: '01:00',
+  })
+}
+
+function removePrice(index: number) {
+  editPrices.splice(index, 1)
+}
+
+function addTier() {
+  editTiers.push({
+    tierName: '',
+    minMinutes: 0,
+    maxMinutes: 60,
+    ratePerMinute: 0.15,
+  })
+}
+
+function removeTier(index: number) {
+  editTiers.splice(index, 1)
+}
+
 async function handleSave() {
+  // 前端校验：电价时段冲突
+  const pricesToCheck = editPrices.map((p: any) => ({
+    periodName: p.periodName,
+    start: p.startObj || p.start,
+    end: p.endObj || p.end,
+  }))
+  const conflict = _validatePricesNoConflict(pricesToCheck)
+  if (conflict) {
+    priceConflictError.value = conflict
+    ElMessage.warning(conflict)
+    return
+  }
+  priceConflictError.value = ''
+
   saving.value = true
   try {
     const data: Record<string, any> = {}
 
-    // 全局配置
-    data.globalConfigs = { ...editConfigs }
+    // 顶层标量
+    data.schedulingAlgorithm = editSchedulingAlgorithm.value
+    data.baseServiceFee = editBaseServiceFee.value
 
     // 电价
     data.electricityPrices = editPrices.map((p: any) => ({
-      id: p.id,
       periodName: p.periodName,
-      startTime: p.startTimeObj || p.startTime,
-      endTime: p.endTimeObj || p.endTime,
+      start: p.startObj || p.start,
+      end: p.endObj || p.end,
       pricePerKwh: p.pricePerKwh,
-      priority: p.priority,
     }))
 
     // 服务费
     data.serviceFeeTiers = editTiers.map((t: any) => ({
-      id: t.id,
-      tierName: t.tierName,
+      tierName: t.tierName || undefined,
+      minMinutes: t.minMinutes,
+      maxMinutes: t.maxMinutes || null,
       ratePerMinute: t.ratePerMinute,
     }))
 
@@ -168,7 +278,7 @@ onMounted(fetchConfig)
 </script>
 
 <style scoped>
-.config-view { max-width: 900px; }
+.config-view { max-width: 960px; }
 .config-view h2 { font-size: 22px; font-weight: 600; color: #1E293B; margin-bottom: 20px; }
 .section-card { border-radius: 10px; margin-bottom: 16px; }
 .section-card :deep(.el-card__header) { font-weight: 600; font-size: 15px; }
