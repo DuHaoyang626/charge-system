@@ -13,9 +13,8 @@ from model.config import GlobalConfig, ElectricityPrice, ServiceFeeTier
 from model.session import ChargingSession
 from model.station import Station
 from model.user import User
-from model.user_protocol import UserProtocol
-from model.protocol import Protocol
 from model.schedule_log import ScheduleLog
+from service.session.service import build_session_detail
 
 logger = logging.getLogger("charge-system.admin")
 
@@ -188,7 +187,7 @@ def list_all_sessions(
     station_id: int | None = None,
     user_id: int | None = None,
 ) -> dict:
-    """查看所有用户会话（分页）。"""
+    """查看所有用户会话（分页）— 严格遵循 API 接口说明。"""
     with Session(engine) as db:
         query = select(ChargingSession)
         if status:
@@ -208,17 +207,28 @@ def list_all_sessions(
         for s in rows:
             user = db.get(User, s.user_id)
             station = db.get(Station, s.station_id)
+
+            # 计算进度
+            progress = 0
+            if s.status == "charging" and s.requested_energy_kwh > 0:
+                progress = min(100, int(s.charged_energy_kwh / s.requested_energy_kwh * 100))
+            elif s.status == "completed":
+                progress = 100
+
             result.append({
-                "id": s.id,
-                "userId": s.user_id,
-                "licensePlate": user.license_plate if user else "未知",
-                "stationId": s.station_id,
-                "stationName": station.name if station else "未知",
+                "sessionId": s.id,
+                "user": {
+                    "id": s.user_id,
+                    "licensePlate": user.license_plate if user else "未知",
+                },
+                "station": {
+                    "id": s.station_id,
+                    "name": station.name if station else "未知",
+                },
                 "status": s.status,
-                "zone": s.zone,
                 "requestedEnergyKwh": s.requested_energy_kwh,
                 "chargedEnergyKwh": s.charged_energy_kwh,
-                "advanceReady": s.advance_ready,
+                "progress": progress,
                 "createdAt": _bjt_iso(s.created_at),
             })
 
@@ -226,36 +236,22 @@ def list_all_sessions(
 
 
 def get_admin_session_detail(session_id: int) -> dict | None:
-    """查看任意会话详情。"""
+    """查看任意会话详情 — 严格遵循 API 接口说明（同 GET /sessions/:id + user 字段）。"""
     with Session(engine) as db:
         s = db.get(ChargingSession, session_id)
         if s is None:
             return None
         user = db.get(User, s.user_id)
-        station = db.get(Station, s.station_id)
-        protocol = db.get(Protocol, s.protocol_id) if s.protocol_id else None
 
-        return {
-            "id": s.id,
-            "userId": s.user_id,
+        # 复用共享的会话详情构建（同 GET /sessions/:id 的完整结构）
+        detail = build_session_detail(s)
+
+        # 添加用户摘要
+        detail["user"] = {
+            "id": s.user_id,
             "licensePlate": user.license_plate if user else "未知",
-            "userName": user.user_name if user else "",
-            "stationId": s.station_id,
-            "stationName": station.name if station else "未知",
-            "protocol": {
-                "id": protocol.id, "name": protocol.name, "powerKw": protocol.power_kw
-            } if protocol else None,
-            "status": s.status,
-            "zone": s.zone,
-            "advanceReady": s.advance_ready,
-            "requestedEnergyKwh": s.requested_energy_kwh,
-            "chargedEnergyKwh": s.charged_energy_kwh,
-            "queuePosition": s.queue_position,
-            "createdAt": _bjt_iso(s.created_at),
-            "enteredWaitingAt": _bjt_iso(s.entered_waiting_at),
-            "startedChargingAt": _bjt_iso(s.started_charging_at),
-            "completedAt": _bjt_iso(s.completed_at),
         }
+        return detail
 
 
 # ═══════════════════════════════════════════
@@ -268,8 +264,10 @@ def list_all_bills(
     user_id: int | None = None,
     station_id: int | None = None,
     payment_status: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> dict:
-    """查看所有账单（分页）。"""
+    """查看所有账单（分页）— 严格遵循 API 接口说明。"""
     with Session(engine) as db:
         query = select(Bill)
         if user_id:
@@ -278,6 +276,14 @@ def list_all_bills(
             query = query.where(Bill.station_id == station_id)
         if payment_status:
             query = query.where(Bill.status == payment_status)
+        if start_date:
+            sd = date.fromisoformat(start_date)
+            query = query.where(Bill.created_at >= datetime(sd.year, sd.month, sd.day))
+        if end_date:
+            ed = date.fromisoformat(end_date)
+            query = query.where(
+                Bill.created_at < datetime(ed.year, ed.month, ed.day) + timedelta(days=1)
+            )
 
         total = db.exec(select(func.count()).select_from(query.subquery())).one()
         query = query.order_by(Bill.created_at.desc())
@@ -290,13 +296,16 @@ def list_all_bills(
             result.append({
                 "billId": b.id,
                 "sessionId": b.session_id,
-                "userId": b.user_id,
-                "licensePlate": user.license_plate if user else "未知",
-                "stationName": b.station_name,
+                "user": {
+                    "id": b.user_id,
+                    "licensePlate": user.license_plate if user else "未知",
+                },
+                "station": {
+                    "id": b.station_id,
+                    "name": b.station_name,
+                },
+                "chargedEnergyKwh": b.total_energy_kwh,
                 "totalFee": b.total_fee,
-                "electricityFee": b.electricity_fee,
-                "serviceFee": b.service_fee,
-                "totalEnergyKwh": b.total_energy_kwh,
                 "paymentStatus": b.status,
                 "createdAt": _bjt_iso(b.created_at),
                 "paidAt": _bjt_iso(b.paid_at),

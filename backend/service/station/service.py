@@ -235,7 +235,7 @@ def stop_station(station_id: int) -> dict:
 
 def emergency_stop_station(station_id: int, algorithm: str = "shortest_time_single",
                            exclude_station_ids: list[int] | None = None) -> dict:
-    """异常停止充电桩 — 使用配置的算法重新调度所有车辆。"""
+    """异常停止充电桩 — 使用配置的算法重新调度所有车辆（严格遵循 API 接口说明）。"""
     from service.dispatch.strategy import get_strategy
 
     with Session(engine) as db:
@@ -245,34 +245,44 @@ def emergency_stop_station(station_id: int, algorithm: str = "shortest_time_sing
 
         station_name = station.name
 
-        all_session_ids = [
+        # 分离充电中 vs 排队/等待的会话
+        charging_ids = [
             r.id for r in db.exec(
                 select(ChargingSession).where(
                     ChargingSession.station_id == station_id,
-                    ChargingSession.status.in_(["queued", "waiting", "charging"]),
+                    ChargingSession.status == "charging",
                 )
             ).all()
         ]
 
-        station.status = "error"
+        movable_ids = [
+            r.id for r in db.exec(
+                select(ChargingSession).where(
+                    ChargingSession.station_id == station_id,
+                    ChargingSession.status.in_(["queued", "waiting"]),
+                )
+            ).all()
+        ]
+
+        station.status = "stopped"
         station.updated_at = datetime.utcnow()
         db.add(station)
         db.commit()
 
-    # 使用策略工厂获取对应算法实例
+    # 使用策略工厂 — 只重新调度排队/等待车辆
     strategy = get_strategy(algorithm)
     result = strategy.redistribute(
-        session_ids=all_session_ids,
+        session_ids=movable_ids,
         exclude_station_id=station_id,
         exclude_station_ids=exclude_station_ids,
     )
 
-    total = len(all_session_ids)
+    total = len(movable_ids)
     moved_count = len(result.moved_sessions)
 
     return {
         "message": f"紧急停止完成，{moved_count}/{total} 辆已重调度",
-        "status": "error",
+        "status": "stopped",
         "algorithm": algorithm,
         "redistributedSessions": [
             {
@@ -283,13 +293,9 @@ def emergency_stop_station(station_id: int, algorithm: str = "shortest_time_sing
             }
             for m in result.moved_sessions
         ],
-        "failedSessions": [
-            {
-                "sessionId": f["sessionId"],
-                "fromStation": station_name,
-                "reason": f["reason"],
-            }
-            for f in result.failed_sessions
+        "chargingSessions": [
+            {"sessionId": sid}
+            for sid in charging_ids
         ],
     }
 

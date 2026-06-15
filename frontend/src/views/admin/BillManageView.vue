@@ -25,10 +25,14 @@
     <el-card shadow="never">
       <el-table :data="bills" v-loading="loading" stripe style="width:100%" @row-click="openDetail">
         <el-table-column prop="billId" label="账单ID" width="70" />
-        <el-table-column prop="licensePlate" label="车牌号" width="100" />
-        <el-table-column prop="stationName" label="充电桩" min-width="120" />
-        <el-table-column prop="totalEnergyKwh" label="电量" width="80">
-          <template #default="{ row }">{{ row.totalEnergyKwh }} kWh</template>
+        <el-table-column label="车牌号" width="100">
+          <template #default="{ row }">{{ row.user?.licensePlate }}</template>
+        </el-table-column>
+        <el-table-column label="充电桩" min-width="120">
+          <template #default="{ row }">{{ row.station?.name }}</template>
+        </el-table-column>
+        <el-table-column label="电量" width="80">
+          <template #default="{ row }">{{ row.chargedEnergyKwh }} kWh</template>
         </el-table-column>
         <el-table-column prop="totalFee" label="总金额" width="90">
           <template #default="{ row }">¥{{ row.totalFee?.toFixed(2) }}</template>

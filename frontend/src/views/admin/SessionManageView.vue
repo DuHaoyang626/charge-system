@@ -27,19 +27,28 @@
 
     <el-card shadow="never">
       <el-table :data="sessions" v-loading="loading" stripe style="width:100%" @row-click="openDetail">
-        <el-table-column prop="id" label="ID" width="60" />
-        <el-table-column prop="licensePlate" label="车牌号" width="100" />
+        <el-table-column label="ID" width="60">
+          <template #default="{ row }">{{ row.sessionId }}</template>
+        </el-table-column>
+        <el-table-column label="车牌号" width="100">
+          <template #default="{ row }">{{ row.user?.licensePlate }}</template>
+        </el-table-column>
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small" effect="light">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="stationName" label="充电桩" min-width="120" />
-        <el-table-column prop="requestedEnergyKwh" label="目标电量" width="90">
+        <el-table-column label="充电桩" min-width="120">
+          <template #default="{ row }">{{ row.station?.name }}</template>
+        </el-table-column>
+        <el-table-column label="目标电量" width="100">
           <template #default="{ row }">{{ row.requestedEnergyKwh }} kWh</template>
         </el-table-column>
-        <el-table-column prop="chargedEnergyKwh" label="已充电量" width="90">
+        <el-table-column label="已充电量" width="100">
           <template #default="{ row }">{{ row.chargedEnergyKwh?.toFixed(2) }} kWh</template>
+        </el-table-column>
+        <el-table-column label="进度" width="80">
+          <template #default="{ row }">{{ row.progress ?? 0 }}%</template>
         </el-table-column>
         <el-table-column label="创建时间" min-width="140">
           <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
@@ -56,13 +65,14 @@
     <el-dialog v-model="showDetail" title="会话详情" :width="500">
       <template v-if="detail">
         <div class="detail-row"><label>会话 ID</label><span>{{ detail.id }}</span></div>
-        <div class="detail-row"><label>用户</label><span>{{ detail.licensePlate }} ({{ detail.userName }})</span></div>
-        <div class="detail-row"><label>充电桩</label><span>{{ detail.stationName }}</span></div>
+        <div class="detail-row"><label>用户</label><span>{{ detail.user?.licensePlate }}</span></div>
+        <div class="detail-row"><label>充电桩</label><span>{{ detail.station?.name }}</span></div>
         <div class="detail-row"><label>状态</label><span>{{ statusLabel(detail.status) }}</span></div>
         <div class="detail-row"><label>区域</label><span>{{ detail.zone || '-' }}</span></div>
         <div class="detail-row"><label>协议</label><span>{{ detail.protocol?.name || '-' }}</span></div>
         <div class="detail-row"><label>目标电量</label><span>{{ detail.requestedEnergyKwh }} kWh</span></div>
         <div class="detail-row"><label>已充电量</label><span>{{ detail.chargedEnergyKwh?.toFixed(2) }} kWh</span></div>
+        <div class="detail-row"><label>进度</label><span>{{ detail.progress }}%</span></div>
         <div class="detail-row"><label>排队位置</label><span>{{ detail.queuePosition ?? '-' }}</span></div>
         <div class="detail-row"><label>创建时间</label><span>{{ formatTime(detail.createdAt) }}</span></div>
         <div class="detail-row" v-if="detail.enteredWaitingAt"><label>进入等待区</label><span>{{ formatTime(detail.enteredWaitingAt) }}</span></div>
@@ -128,7 +138,8 @@ function resetFilters() {
 
 async function openDetail(row: any) {
   try {
-    const res = await getAdminSessionDetailApi(row.id)
+    // row.sessionId is the field name per API spec (list uses sessionId, not id)
+    const res = await getAdminSessionDetailApi(row.sessionId)
     detail.value = (res.data as any).data
     showDetail.value = true
   } catch { /* ignore */ }

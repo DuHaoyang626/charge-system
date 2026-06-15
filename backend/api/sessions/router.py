@@ -20,6 +20,7 @@ from model.station import Station, StationProtocol
 from model.user_protocol import UserProtocol
 from service.dispatch.service import find_best_station
 from service.queue.service import cancel_session, enqueue, move_to_station
+from service.session.service import build_session_detail
 
 router = APIRouter(tags=["充电会话"])
 
@@ -85,96 +86,7 @@ def _get_user_session(session_id: int, user_id: int) -> ChargingSession:
         return session
 
 
-# ── 获取会话详情（内部复用） ──
-
-
-def _build_session_detail(session: ChargingSession) -> dict:
-    """构建会话详情响应。"""
-    from sqlmodel import Session as DBSession
-    with DBSession(db_engine) as db:
-        station = db.get(Station, session.station_id)
-        protocol = db.get(Protocol, session.protocol_id) if session.protocol_id else None
-        now = datetime.utcnow()
-
-        up_rows = db.exec(
-            select(UserProtocol, Protocol)
-            .join(Protocol, UserProtocol.protocol_id == Protocol.id)
-            .where(UserProtocol.user_id == session.user_id)
-        ).all()
-        supported_protocols = [
-            {"id": p.id, "name": p.name, "powerKw": p.power_kw}
-            for _, p in up_rows
-        ]
-
-        progress = 0
-        if session.status == "charging" and session.requested_energy_kwh > 0:
-            progress = min(100, int(session.charged_energy_kwh / session.requested_energy_kwh * 100))
-
-        charging_duration = None
-        if session.status == "charging" and session.started_charging_at:
-            seconds = (now - session.started_charging_at).total_seconds()
-            h, remainder = divmod(int(seconds), 3600)
-            m, s = divmod(remainder, 60)
-            charging_duration = f"{h:02d}:{m:02d}:{s:02d}"
-
-        estimated_end = None
-        if session.status == "charging" and session.started_charging_at and session.charged_energy_kwh > 0:
-            elapsed = (now - session.started_charging_at).total_seconds()
-            if elapsed > 0:
-                rate = session.charged_energy_kwh / elapsed
-                remaining_energy = session.requested_energy_kwh - session.charged_energy_kwh
-                if rate > 0 and remaining_energy > 0:
-                    remaining_sec = remaining_energy / rate
-                    estimated_end = _bjt_iso(now + timedelta(seconds=remaining_sec))
-
-        base_fee = station.base_service_fee if station else 5.0
-        current_fee = {
-            "electricityFee": session.charged_energy_kwh if session.status == "charging" else 0,
-            "electricityDetails": [],
-            "baseServiceFee": base_fee if session.zone in ("waiting", "charging") else 0,
-            "timeServiceFee": 0,
-            "totalServiceFee": base_fee if session.zone in ("waiting", "charging") else 0,
-            "totalFee": (session.charged_energy_kwh if session.status == "charging" else 0)
-                        + (base_fee if session.zone in ("waiting", "charging") else 0),
-        }
-
-        bill = None
-        if session.status in ("completed", "cancelled"):
-            b = db.exec(
-                select(Bill).where(Bill.session_id == session.id)
-            ).first()
-            if b:
-                bill = {
-                    "billId": b.id,
-                    "totalFee": b.total_fee,
-                    "paymentStatus": b.status,
-                }
-
-        return {
-            "id": session.id,
-            "status": session.status,
-            "zone": session.zone,
-            "advanceReady": session.advance_ready,
-            "station": {"id": station.id, "name": station.name} if station else None,
-            "protocol": {
-                "id": protocol.id,
-                "name": protocol.name,
-                "powerKw": protocol.power_kw,
-            } if protocol else None,
-            "requestedEnergyKwh": session.requested_energy_kwh,
-            "chargedEnergyKwh": session.charged_energy_kwh,
-            "progress": progress,
-            "chargingDuration": charging_duration,
-            "queuePosition": session.queue_position,
-            "supportedProtocols": supported_protocols,
-            "enteredQueueAt": _bjt_iso(session.created_at),
-            "enteredWaitingAt": _bjt_iso(session.entered_waiting_at),
-            "startedChargingAt": _bjt_iso(session.started_charging_at),
-            "completedAt": _bjt_iso(session.completed_at),
-            "estimatedEndTime": estimated_end,
-            "currentFee": current_fee,
-            "bill": bill,
-        }
+# ── 获取会话详情 — 委托共享服务 ──
 
 
 # ── 原有路由 ──
@@ -255,7 +167,7 @@ async def api_get_session(
     _get_user_session(session_id, user_id)
     with Session(db_engine) as db:
         session = db.get(ChargingSession, session_id)
-    return resp_ok(data=_build_session_detail(session))
+    return resp_ok(data=build_session_detail(session))
 
 
 @router.get("/sessions/{session_id}/switch-options")
@@ -339,6 +251,7 @@ def _handle_reject(
             data={
                 "sessionId": session.id, "status": "cancelled",
                 "message": "已取消排队",
+                "bill": None,
             },
             message="已取消排队",
         )
@@ -524,7 +437,7 @@ async def api_update_energy(
         db.add(session)
         db.commit()
 
-        detail = _build_session_detail(session)
+        detail = build_session_detail(session)
         protocol = detail.get("protocol")
 
         now = datetime.utcnow()
@@ -639,7 +552,7 @@ async def api_update_protocol(
     # 重新获取 session（避免 detached 问题）
     with Session(db_engine) as db2:
         fresh = db2.get(ChargingSession, session_id)
-        detail = _build_session_detail(fresh) if fresh else {}
+        detail = build_session_detail(fresh) if fresh else {}
 
     return resp_ok(
         data={
@@ -730,6 +643,17 @@ async def api_stop_charging(
         time_service_fee = round(svc_result.total - base_fee, 2)
         total_service_fee = svc_result.total
 
+        # 构建分时电费明细
+        electricity_details = [
+            {
+                "period": item.name,
+                "energy": item.quantity,
+                "price": item.unit_price,
+                "fee": item.fee,
+            }
+            for item in elec_result.items
+        ]
+
         bill = Bill(
             session_id=session.id, user_id=session.user_id,
             station_id=session.station_id,
@@ -758,6 +682,7 @@ async def api_stop_charging(
                 "bill": {
                     "billId": bill.id,
                     "electricityFee": electricity_fee,
+                    "electricityDetails": electricity_details,
                     "baseServiceFee": base_fee,
                     "timeServiceFee": time_service_fee,
                     "totalServiceFee": total_service_fee,

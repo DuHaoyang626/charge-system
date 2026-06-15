@@ -27,7 +27,8 @@ class ReorderRequest(BaseModel):
 class MoveRequest(BaseModel):
     session_id: int = Field(alias="sessionId")
     target_station_id: int = Field(alias="targetStationId")
-    target_position: int | None = Field(default=None, alias="targetPosition", ge=1)
+    target_zone: str = Field(alias="targetZone")
+    target_position: int | None = Field(default=None, alias="targetPosition")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -80,6 +81,7 @@ async def admin_move_session(
         result = move_session_to_station(
             session_id=body.session_id,
             target_station_id=body.target_station_id,
+            target_zone=body.target_zone,
             target_position=body.target_position,
         )
         return resp_ok(data=result, message="车辆已移动到目标桩")

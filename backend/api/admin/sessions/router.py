@@ -14,7 +14,7 @@ router = APIRouter(tags=["管理端-会话"])
 @router.get("/admin/sessions")
 async def admin_list_sessions(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=100, alias="pageSize"),
     status: str | None = None,
     station_id: int | None = Query(None, alias="stationId"),
     user_id: int | None = Query(None, alias="userId"),

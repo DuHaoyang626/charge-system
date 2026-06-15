@@ -886,6 +886,7 @@ Authorization: Bearer <token>
 | `id`                            | Number       | 是       | 会话 ID                                                                 |
 | `status`                        | String       | 是       | `queued` / `waiting` / `charging` / `completed` / `cancelled` |
 | `zone`                          | String       | 是       | `queue` / `waiting` / `charging` / `null`（完成后）             |
+| `advanceReady`                  | Boolean      | 是       | 调度就绪标记。`true` 表示系统已推进至下一阶段等待确认（如排队→等待、等待→充电），前端应展示确认界面 |
 | `station`                       | Object       | 是       | 当前所在/处理充电桩                                                     |
 | `station.id`                    | Number       | 是       | 桩 ID                                                                   |
 | `station.name`                  | String       | 是       | 桩名称                                                                  |
@@ -924,6 +925,7 @@ Authorization: Bearer <token>
     "id": 101,
     "status": "queued",
     "zone": "queue",
+    "advanceReady": false,
     "station": {"id": 1, "name": "A区-01号桩"},
     "protocol": null,
     "requestedEnergyKwh": 60.0,
@@ -959,6 +961,7 @@ Authorization: Bearer <token>
     "id": 101,
     "status": "waiting",
     "zone": "waiting",
+    "advanceReady": false,
     "station": {"id": 1, "name": "A区-01号桩"},
     "protocol": null,
     "requestedEnergyKwh": 60.0,
@@ -994,6 +997,7 @@ Authorization: Bearer <token>
     "id": 101,
     "status": "charging",
     "zone": "charging",
+    "advanceReady": false,
     "station": {"id": 1, "name": "A区-01号桩"},
     "protocol": {"id": 3, "name": "DC 120kW", "powerKw": 120.0},
     "requestedEnergyKwh": 60.0,
@@ -1031,6 +1035,7 @@ Authorization: Bearer <token>
     "id": 101,
     "status": "completed",
     "zone": null,
+    "advanceReady": false,
     "station": {"id": 1, "name": "A区-01号桩"},
     "protocol": {"id": 3, "name": "DC 120kW", "powerKw": 120.0},
     "requestedEnergyKwh": 60.0,
@@ -1072,6 +1077,7 @@ Authorization: Bearer <token>
     "id": 101,
     "status": "cancelled",
     "zone": null,
+    "advanceReady": false,
     "station": {"id": 1, "name": "A区-01号桩"},
     "protocol": null,
     "requestedEnergyKwh": 60.0,

@@ -107,6 +107,15 @@ class TestStopCharging:
         assert data["status"] == "completed"
         assert "bill" in data
         assert data["bill"]["totalFee"] > 0
+        # P1-04: 停止充电响应必须包含 electricityDetails
+        assert "electricityDetails" in data["bill"]
+        assert isinstance(data["bill"]["electricityDetails"], list)
+        if data["bill"]["electricityDetails"]:
+            item = data["bill"]["electricityDetails"][0]
+            assert "period" in item
+            assert "energy" in item
+            assert "price" in item
+            assert "fee" in item
 
 
 class TestConfirmCharging:

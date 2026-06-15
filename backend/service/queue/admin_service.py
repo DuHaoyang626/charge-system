@@ -123,14 +123,18 @@ def reorder_queue(
 def move_session_to_station(
     session_id: int,
     target_station_id: int,
+    target_zone: str = "queue",
     target_position: int | None = None,
 ) -> dict:
     """
-    将会话从一个桩移动到另一个桩的对应区域。
+    将会话从一个桩移动到另一个桩的指定区域（严格遵循 API 接口说明）。
 
-    保留会话当前的 zone（queue → queue, waiting → waiting）。
-    仅当两个桩都 running 时可用。
+    target_zone: "queue"（仅支持排队区）。
+    target_position: -1 表示队尾，其他正整数为具体位置。
     """
+    if target_zone not in ("queue",):
+        raise AppException(400, "仅支持移动到排队区")
+
     with Session(engine) as db:
         session = db.get(ChargingSession, session_id)
         if session is None:
@@ -145,42 +149,35 @@ def move_session_to_station(
         if target_station.status != "running":
             raise AppException(400, "目标充电桩未运行")
 
-        zone = session.zone or "queue"
+        zone = target_zone
         old_station_id = session.station_id
-        old_position = session.queue_position
+        old_zone = session.zone or "queue"
 
         # 容量检查
-        if zone == "queue":
-            if target_station.queue_count >= target_station.queue_capacity:
-                raise AppException(400, "目标充电桩排队区已满")
-            target_station.queue_count += 1
-            if source_station:
-                source_station.queue_count = max(0, source_station.queue_count - 1)
-        else:  # waiting
-            if target_station.waiting_count >= target_station.waiting_capacity:
-                raise AppException(400, "目标充电桩等待区已满")
-            target_station.waiting_count += 1
-            if source_station:
-                source_station.waiting_count = max(0, source_station.waiting_count - 1)
+        if target_station.queue_count >= target_station.queue_capacity:
+            raise AppException(400, "目标充电桩排队区已满")
+
+        target_station.queue_count += 1
+        if source_station:
+            source_station.queue_count = max(0, source_station.queue_count - 1)
 
         # 更新会话
         session.station_id = target_station_id
-        if target_position:
+        session.zone = zone
+        session.status = "queued"
+
+        # 处理目标位置 -1 表示队尾
+        if target_position is not None and target_position > 0:
             session.queue_position = target_position
         else:
-            # 放到队尾
-            session.queue_position = (
-                target_station.queue_count if zone == "queue"
-                else target_station.waiting_count
-            )
+            session.queue_position = target_station.queue_count
 
-        # 原桩剩余会话重新排位
+        # 原桩同区域剩余会话重新排位
         remaining = db.exec(
             select(ChargingSession)
             .where(
                 ChargingSession.station_id == old_station_id,
-                ChargingSession.zone == zone,
-                ChargingSession.status == session.status,
+                ChargingSession.zone == old_zone,
                 ChargingSession.id != session_id,
             )
             .order_by(ChargingSession.queue_position)
@@ -198,7 +195,7 @@ def move_session_to_station(
             session_id=session.id,
             from_station_id=old_station_id,
             to_station_id=target_station_id,
-            from_zone=zone,
+            from_zone=old_zone,
             to_zone=zone,
             triggered_by="admin",
             detail=f"管理员移桩: {source_station.name if source_station else ''} → {target_station.name}",
