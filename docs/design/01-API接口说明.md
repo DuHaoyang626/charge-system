@@ -402,6 +402,45 @@ Authorization: Bearer <token>
 
 ---
 
+## GET /protocols — 查询可用充电协议列表
+
+### 功能说明
+
+获取系统中所有可用的充电协议。注册时选择协议、充电桩协议展示等场景调用此接口获取完整的协议列表。
+
+### 请求格式
+
+```
+GET /api/v1/protocols
+```
+
+> 本接口无需认证，注册页面在加载协议选择器时可提前调用。
+
+### 响应字段
+
+| 字段                  | 类型   | 始终返回 | 说明       |
+| --------------------- | ------ | -------- | ---------- |
+| `data`              | Array  | 是       | 协议列表   |
+| `data[].id`         | Number | 是       | 协议 ID    |
+| `data[].name`       | String | 是       | 协议名称   |
+| `data[].powerKw`    | Number | 是       | 功率（kW） |
+
+### 响应示例
+
+```json
+{
+  "code": 200,
+  "data": [
+    {"id": 1, "name": "AC 7kW", "powerKw": 7.0},
+    {"id": 2, "name": "AC 22kW", "powerKw": 22.0},
+    {"id": 3, "name": "DC 120kW", "powerKw": 120.0}
+  ],
+  "timestamp": 1700000000000
+}
+```
+
+---
+
 # 第二部分：充电桩模块（用户端）
 
 ## GET /stations — 获取所有充电桩状态
@@ -2791,6 +2830,71 @@ Authorization: Bearer <admin_token>
 | `targetStationId` | Number | 目标充电桩 ID           |
 | `targetZone`      | String | `queue`               |
 | `targetPosition`  | Number | 目标位置（-1 表示队尾） |
+
+---
+
+### GET /admin/queues/logs — 查看调度日志
+
+**功能**：查看调度系统执行的车辆流转日志，包括排队→等待→充电的各阶段转移记录。
+
+```
+GET /api/v1/admin/queues/logs?page=1&pageSize=20&sessionId=101
+Authorization: Bearer <admin_token>
+```
+
+**查询参数**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `page` | Number | 否 | 页码，默认 1 |
+| `pageSize` | Number | 否 | 每页数量，默认 20 |
+| `sessionId` | Number | 否 | 按会话 ID 筛选 |
+
+**响应字段**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `list` | Array | 日志列表 |
+| `list[].id` | Number | 日志 ID |
+| `list[].sessionId` | Number | 关联会话 ID |
+| `list[].licensePlate` | String | 车牌号 |
+| `list[].fromStation` | String | 来源充电桩名称 |
+| `list[].toStation` | String | 目标充电桩名称 |
+| `list[].fromZone` | String | 来源区域 |
+| `list[].toZone` | String | 目标区域 |
+| `list[].triggeredBy` | String | 触发方式：`user` / `admin` / `system` |
+| `list[].detail` | String | 详细信息 |
+| `list[].createdAt` | String | 创建时间 |
+| `page` | Number | 当前页码 |
+| `pageSize` | Number | 每页数量 |
+| `total` | Number | 总数量 |
+
+**响应示例**：
+
+```json
+{
+  "code": 200,
+  "data": {
+    "list": [
+      {
+        "id": 1,
+        "sessionId": 101,
+        "licensePlate": "京A12345",
+        "fromStation": "A区-01号桩",
+        "toStation": "A区-01号桩",
+        "fromZone": "queue",
+        "toZone": "waiting",
+        "triggeredBy": "system",
+        "detail": null,
+        "createdAt": "2026-06-08T14:02:00"
+      }
+    ],
+    "page": 1,
+    "pageSize": 20,
+    "total": 1
+  }
+}
+```
 
 ---
 
