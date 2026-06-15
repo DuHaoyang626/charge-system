@@ -4,7 +4,7 @@
 from fastapi import APIRouter, Depends, Query
 
 from core.deps import get_current_admin
-from core.response import resp_ok
+from core.response import resp_err, resp_ok
 from service.admin.service import (
     get_charging_volume_report,
     get_revenue_report,
@@ -18,10 +18,17 @@ router = APIRouter(tags=["管理端-报表"])
 async def admin_charging_volume(
     start_date: str | None = Query(None, alias="startDate"),
     end_date: str | None = Query(None, alias="endDate"),
+    granularity: str = Query("month", alias="granularity"),
     admin_id: int = Depends(get_current_admin),
 ):
     """充电量统计。"""
-    data = get_charging_volume_report(start_date=start_date, end_date=end_date)
+    if granularity not in ("day", "week", "month"):
+        return resp_err(400, "granularity 必须是 day / week / month")
+    if not start_date or not end_date:
+        return resp_err(400, "startDate 和 endDate 为必填参数")
+    data = get_charging_volume_report(
+        start_date=start_date, end_date=end_date, granularity=granularity,
+    )
     return resp_ok(data=data)
 
 
@@ -29,15 +36,28 @@ async def admin_charging_volume(
 async def admin_revenue(
     start_date: str | None = Query(None, alias="startDate"),
     end_date: str | None = Query(None, alias="endDate"),
+    granularity: str = Query("month", alias="granularity"),
     admin_id: int = Depends(get_current_admin),
 ):
     """收入统计。"""
-    data = get_revenue_report(start_date=start_date, end_date=end_date)
+    if granularity not in ("day", "week", "month"):
+        return resp_err(400, "granularity 必须是 day / week / month")
+    if not start_date or not end_date:
+        return resp_err(400, "startDate 和 endDate 为必填参数")
+    data = get_revenue_report(
+        start_date=start_date, end_date=end_date, granularity=granularity,
+    )
     return resp_ok(data=data)
 
 
 @router.get("/admin/reports/utilization")
-async def admin_utilization(admin_id: int = Depends(get_current_admin)):
+async def admin_utilization(
+    start_date: str | None = Query(None, alias="startDate"),
+    end_date: str | None = Query(None, alias="endDate"),
+    admin_id: int = Depends(get_current_admin),
+):
     """充电桩利用率。"""
-    data = get_utilization_report()
+    if not start_date or not end_date:
+        return resp_err(400, "startDate 和 endDate 为必填参数")
+    data = get_utilization_report(start_date=start_date, end_date=end_date)
     return resp_ok(data=data)

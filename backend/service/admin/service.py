@@ -324,13 +324,23 @@ def get_admin_bill_detail(bill_id: int) -> dict | None:
 # 报表统计
 # ═══════════════════════════════════════════
 
-def get_charging_volume_report(
-    start_date: str | None = None,
-    end_date: str | None = None,
-) -> dict:
-    """充电量统计。"""
+def _period_key(dt: datetime, granularity: str) -> str:
+    """根据粒度生成周期标识。"""
+    if granularity == "day":
+        return dt.strftime("%Y-%m-%d")
+    elif granularity == "week":
+        iso = dt.isocalendar()
+        return f"{iso[0]}-W{iso[1]:02d}"
+    else:  # month
+        return dt.strftime("%Y-%m")
+
+
+def _load_bills_in_range(
+    start_date: str | None, end_date: str | None, status: str = "paid"
+) -> list:
+    """按日期范围加载账单（在当前会话内完成）。"""
     with Session(engine) as db:
-        query = select(Bill).where(Bill.status == "paid")
+        query = select(Bill).where(Bill.status == status)
         if start_date:
             sd = date.fromisoformat(start_date)
             query = query.where(Bill.created_at >= datetime(sd.year, sd.month, sd.day))
@@ -339,96 +349,157 @@ def get_charging_volume_report(
             query = query.where(
                 Bill.created_at < datetime(ed.year, ed.month, ed.day) + timedelta(days=1)
             )
+        rows = db.exec(query).all()
+        # 提取需要的数据到普通字典，避免 detached session 问题
+        result = []
+        for r in rows:
+            result.append({
+                "energy": r.total_energy_kwh,
+                "fee": r.total_fee,
+                "elec_fee": r.electricity_fee,
+                "svc_fee": r.service_fee,
+                "created": r.created_at,
+            })
+        return result
 
-        bills = db.exec(query).all()
-        total_energy = sum(b.total_energy_kwh for b in bills)
-        total_revenue = sum(b.total_fee for b in bills)
-        count = len(bills)
 
-        # 按站统计
-        station_stats: dict[int, dict] = {}
-        for b in bills:
-            if b.station_id not in station_stats:
-                st = db.get(Station, b.station_id)
-                station_stats[b.station_id] = {
-                    "stationId": b.station_id,
-                    "stationName": st.name if st else "未知",
-                    "totalEnergy": 0,
-                    "totalRevenue": 0,
-                    "count": 0,
-                }
-            station_stats[b.station_id]["totalEnergy"] += b.total_energy_kwh
-            station_stats[b.station_id]["totalRevenue"] += b.total_fee
-            station_stats[b.station_id]["count"] += 1
+def get_charging_volume_report(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    granularity: str = "month",
+) -> dict:
+    """充电量统计 — 严格遵循 API 接口说明。"""
+    bills = _load_bills_in_range(start_date, end_date)
+    total_energy = sum(b["energy"] for b in bills)
 
-        return {
-            "summary": {
-                "totalEnergy": round(total_energy, 2),
-                "totalRevenue": round(total_revenue, 2),
-                "totalSessions": count,
-            },
-            "byStation": [
-                {"stationName": v["stationName"], "totalEnergy": round(v["totalEnergy"], 2),
-                 "totalRevenue": round(v["totalRevenue"], 2), "count": v["count"]}
-                for v in station_stats.values()
-            ],
-        }
+    from collections import defaultdict
+    buckets: dict[str, dict] = defaultdict(lambda: {"energyKwh": 0.0, "sessions": 0})
+    for b in bills:
+        pk = _period_key(b["created"], granularity)
+        buckets[pk]["energyKwh"] += b["energy"]
+        buckets[pk]["sessions"] += 1
+
+    data_points = []
+    for period in sorted(buckets.keys()):
+        bkt = buckets[period]
+        data_points.append({
+            "period": period,
+            "energyKwh": round(bkt["energyKwh"], 2),
+            "sessions": bkt["sessions"],
+        })
+
+    return {
+        "totalEnergyKwh": round(total_energy, 2),
+        "totalSessions": len(bills),
+        "dataPoints": data_points,
+    }
 
 
 def get_revenue_report(
     start_date: str | None = None,
     end_date: str | None = None,
+    granularity: str = "month",
 ) -> dict:
-    """收入统计。"""
-    with Session(engine) as db:
-        query = select(Bill).where(Bill.status == "paid")
-        if start_date:
-            sd = date.fromisoformat(start_date)
-            query = query.where(Bill.created_at >= datetime(sd.year, sd.month, sd.day))
-        if end_date:
-            ed = date.fromisoformat(end_date)
-            query = query.where(
-                Bill.created_at < datetime(ed.year, ed.month, ed.day) + timedelta(days=1)
-            )
+    """收入统计 — 严格遵循 API 接口说明。"""
+    bills = _load_bills_in_range(start_date, end_date)
+    total_revenue = sum(b["fee"] for b in bills)
+    total_electricity = sum(b["elec_fee"] for b in bills)
+    total_service = sum(b["svc_fee"] for b in bills)
 
-        bills = db.exec(query).all()
+    from collections import defaultdict
+    buckets: dict[str, dict] = defaultdict(lambda: {"revenue": 0.0, "electricity": 0.0, "service": 0.0})
+    for b in bills:
+        pk = _period_key(b["created"], granularity)
+        buckets[pk]["revenue"] += b["fee"]
+        buckets[pk]["electricity"] += b["elec_fee"]
+        buckets[pk]["service"] += b["svc_fee"]
 
-        total_electricity = sum(b.electricity_fee for b in bills)
-        total_service = sum(b.service_fee for b in bills)
-        total_revenue = sum(b.total_fee for b in bills)
+    data_points = []
+    for period in sorted(buckets.keys()):
+        bkt = buckets[period]
+        data_points.append({
+            "period": period,
+            "revenue": round(bkt["revenue"], 2),
+            "electricity": round(bkt["electricity"], 2),
+            "service": round(bkt["service"], 2),
+        })
 
-        return {
-            "totalRevenue": round(total_revenue, 2),
-            "electricityRevenue": round(total_electricity, 2),
-            "serviceRevenue": round(total_service, 2),
-            "paidSessions": len(bills),
-        }
+    return {
+        "totalRevenue": round(total_revenue, 2),
+        "electricityRevenue": round(total_electricity, 2),
+        "serviceRevenue": round(total_service, 2),
+        "dataPoints": data_points,
+    }
 
 
-def get_utilization_report() -> dict:
-    """充电桩利用率统计。"""
+def get_utilization_report(
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
+    """充电桩利用率统计 — 严格遵循 API 接口说明。"""
     with Session(engine) as db:
         stations = db.exec(select(Station).order_by(Station.id)).all()
-        result = []
-        for s in stations:
-            queue_util = (s.queue_count / s.queue_capacity * 100) if s.queue_capacity else 0
-            waiting_util = (s.waiting_count / s.waiting_capacity * 100) if s.waiting_capacity else 0
-            charging_util = (s.charging_count / s.charging_capacity * 100) if s.charging_capacity else 0
-            result.append({
-                "stationId": s.id,
-                "stationName": s.name,
-                "status": s.status,
-                "queueUtilization": round(queue_util, 1),
-                "waitingUtilization": round(waiting_util, 1),
-                "chargingUtilization": round(charging_util, 1),
-                "queueCount": s.queue_count,
-                "queueCapacity": s.queue_capacity,
-                "waitingCount": s.waiting_count,
-                "waitingCapacity": s.waiting_capacity,
-                "chargingCount": s.charging_count,
-                "chargingCapacity": s.charging_capacity,
-            })
-        return {"stations": result}
+
+    # 计算时间区间内的小时数
+    from datetime import datetime as dt_mod
+    now = dt_mod.utcnow()
+    if end_date:
+        ed = date.fromisoformat(end_date)
+        period_end = datetime(ed.year, ed.month, ed.day, 23, 59, 59)
+    else:
+        period_end = now
+    if start_date:
+        sd = date.fromisoformat(start_date)
+        period_start = datetime(sd.year, sd.month, sd.day)
+    else:
+        # 默认查最近 30 天
+        period_start = period_end - timedelta(days=30)
+
+    total_hours_in_period = max(1, (period_end - period_start).total_seconds() / 3600)
+
+    # 获取该时间段内各桩的充电会话
+    with Session(engine) as db:
+        session_query = select(ChargingSession).where(
+            ChargingSession.status == "completed",
+            ChargingSession.completed_at >= period_start,
+            ChargingSession.completed_at <= period_end,
+        )
+        completed_sessions = db.exec(session_query).all()
+
+    station_charging_hours: dict[int, float] = {}
+    for s in completed_sessions:
+        sid = s.station_id
+        if s.started_charging_at and s.completed_at:
+            secs = (s.completed_at - s.started_charging_at).total_seconds()
+            station_charging_hours[sid] = station_charging_hours.get(sid, 0) + secs / 3600
+
+    result = []
+    total_charging_hours_all = 0.0
+    total_available_hours_all = 0.0
+
+    for s in stations:
+        ch = round(station_charging_hours.get(s.id, 0), 2)
+        ah = round(s.charging_capacity * total_hours_in_period, 2)
+        util = round(min(1.0, ch / ah if ah > 0 else 0), 4)
+
+        total_charging_hours_all += ch
+        total_available_hours_all += ah
+
+        result.append({
+            "stationId": s.id,
+            "stationName": s.name,
+            "utilization": util,
+            "totalChargingHours": ch,
+            "totalAvailableHours": ah,
+        })
+
+    overall = round(min(1.0, total_charging_hours_all / total_available_hours_all
+                        if total_available_hours_all > 0 else 0), 4)
+
+    return {
+        "overallUtilization": overall,
+        "stations": result,
+    }
 
 
 # ═══════════════════════════════════════════

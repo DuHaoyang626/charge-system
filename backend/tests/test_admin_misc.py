@@ -1,10 +1,11 @@
 """
-P0-05/P0-06/P0-07 验证：管理端账单、紧急停止、队列移动 — 严格遵循 API 接口说明。
+P0-05/P0-06/P0-07/P2-01 验证：管理端账单、紧急停止、队列移动、报表 — 严格遵循 API 接口说明。
 
 测试覆盖：
   - GET /admin/bills 返回嵌套 user/station 结构
   - POST /admin/stations/:id/emergency-stop 响应格式
   - PUT /admin/queues/move 请求含 targetZone
+  - GET /admin/reports/* 三个报表接口参数和响应结构
 
 运行：pytest tests/test_admin_misc.py -v
 """
@@ -204,24 +205,30 @@ class TestQueueMove:
 
     def test_move_success(self, admin_headers):
         """带 targetZone 的正常请求。"""
-        # 先找一个 queued 会话
-        with DBSession(engine) as db:
-            session = db.exec(
-                select(ChargingSession).where(ChargingSession.status == "queued")
-            ).first()
-            if not session:
-                pytest.skip("无 queued 会话")
-            sid = session.id
+        # 创建测试用户 + 会话
+        import random
+        suffix = random.randint(10000, 99999)
+        plate = f"移动测试{suffix}"
+        r = client.post("/api/v1/auth/register", json={
+            "licensePlate": plate, "userName": "移动测试车",
+            "batteryCapacity": 60.0, "password": "test123",
+            "confirmPassword": "test123", "protocolIds": [1, 3],
+        })
+        token = r.json()["data"]["token"]
+        r2 = client.post("/api/v1/sessions",
+            json={"requestedEnergyKwh": 30.0, "protocolIds": [1, 3]},
+            headers={"Authorization": f"Bearer {token}"})
+        assert r2.status_code == 201
+        sid = r2.json()["data"]["sessionId"]
 
-            # 找一个 other running 桩
+        with DBSession(engine) as db:
             other = db.exec(
                 select(Station).where(
                     Station.status == "running",
-                    Station.id != session.station_id,
                 )
             ).first()
             if not other:
-                pytest.skip("无其他 running 充电桩")
+                pytest.skip("无 running 充电桩")
             target_id = other.id
 
         resp = client.put("/api/v1/admin/queues/move",
@@ -239,6 +246,10 @@ class TestQueueMove:
         assert data["zone"] == "queue"
         assert "newPosition" in data
 
+        # 清理：取消该会话，释放排队槽位
+        client.post(f"/api/v1/sessions/{sid}/cancel",
+                    headers={"Authorization": f"Bearer {token}"})
+
     def test_move_requires_admin(self):
         """普通用户无权调用。"""
         token = _user_token()
@@ -249,3 +260,111 @@ class TestQueueMove:
                           },
                           headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code == 403
+
+
+# ══════════════════════════════════════════════════════════════
+# P2-01: 报表接口
+# ══════════════════════════════════════════════════════════════
+
+
+class TestReports:
+    """三个报表接口 — 参数和响应结构严格遵循 API 接口说明。"""
+
+    def test_charging_volume_structure(self, admin_headers):
+        """充电量统计响应结构。"""
+        resp = client.get("/api/v1/admin/reports/charging-volume", params={
+            "startDate": "2026-01-01", "endDate": "2026-06-15", "granularity": "month",
+        }, headers=admin_headers)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+
+        assert "totalEnergyKwh" in data
+        assert isinstance(data["totalEnergyKwh"], (int, float))
+        assert "totalSessions" in data
+        assert isinstance(data["totalSessions"], int)
+        assert "dataPoints" in data
+        assert isinstance(data["dataPoints"], list)
+
+        if data["dataPoints"]:
+            dp = data["dataPoints"][0]
+            assert "period" in dp
+            assert "energyKwh" in dp
+            assert "sessions" in dp
+
+    def test_charging_volume_missing_params(self, admin_headers):
+        """缺少必填参数返回 400。"""
+        resp = client.get("/api/v1/admin/reports/charging-volume",
+                          headers=admin_headers)
+        assert resp.status_code == 400
+
+    def test_charging_volume_invalid_granularity(self, admin_headers):
+        """不支持的粒度返回 400。"""
+        resp = client.get("/api/v1/admin/reports/charging-volume", params={
+            "startDate": "2026-01-01", "endDate": "2026-06-15", "granularity": "year",
+        }, headers=admin_headers)
+        assert resp.status_code == 400
+
+    def test_revenue_structure(self, admin_headers):
+        """收入统计响应结构。"""
+        resp = client.get("/api/v1/admin/reports/revenue", params={
+            "startDate": "2026-01-01", "endDate": "2026-06-15", "granularity": "month",
+        }, headers=admin_headers)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+
+        assert "totalRevenue" in data
+        assert "electricityRevenue" in data
+        assert "serviceRevenue" in data
+        assert "dataPoints" in data
+        assert isinstance(data["dataPoints"], list)
+
+        if data["dataPoints"]:
+            dp = data["dataPoints"][0]
+            assert "period" in dp
+            assert "revenue" in dp
+            assert "electricity" in dp
+            assert "service" in dp
+
+    def test_revenue_missing_params(self, admin_headers):
+        """缺少必填参数返回 400。"""
+        resp = client.get("/api/v1/admin/reports/revenue",
+                          headers=admin_headers)
+        assert resp.status_code == 400
+
+    def test_utilization_structure(self, admin_headers):
+        """充电桩利用率响应结构。"""
+        resp = client.get("/api/v1/admin/reports/utilization", params={
+            "startDate": "2026-01-01", "endDate": "2026-06-15",
+        }, headers=admin_headers)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+
+        assert "overallUtilization" in data
+        assert isinstance(data["overallUtilization"], (int, float))
+        assert "stations" in data
+        assert isinstance(data["stations"], list)
+
+        if data["stations"]:
+            s = data["stations"][0]
+            assert "stationId" in s
+            assert "stationName" in s
+            assert "utilization" in s
+            assert "totalChargingHours" in s
+            assert "totalAvailableHours" in s
+
+    def test_utilization_missing_params(self, admin_headers):
+        """缺少必填参数返回 400。"""
+        resp = client.get("/api/v1/admin/reports/utilization",
+                          headers=admin_headers)
+        assert resp.status_code == 400
+
+    def test_reports_require_admin(self):
+        """普通用户无权访问报表。"""
+        token = _user_token()
+        for path in ["/api/v1/admin/reports/charging-volume",
+                     "/api/v1/admin/reports/revenue",
+                     "/api/v1/admin/reports/utilization"]:
+            resp = client.get(path, params={
+                "startDate": "2026-01-01", "endDate": "2026-06-15",
+            }, headers={"Authorization": f"Bearer {token}"})
+            assert resp.status_code == 403, f"{path} 应返回 403"
