@@ -105,6 +105,11 @@ const router = createRouter({
           component: () => import('@/views/admin/QueueManageView.vue'),
         },
         {
+          path: 'schedule-logs',
+          name: 'AdminScheduleLogs',
+          component: () => import('@/views/admin/ScheduleLogView.vue'),
+        },
+        {
           path: 'config',
           name: 'AdminConfig',
           component: () => import('@/views/admin/ConfigView.vue'),

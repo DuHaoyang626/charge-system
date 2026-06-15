@@ -33,6 +33,10 @@
           <el-icon><Sort /></el-icon>
           <span>队列管理</span>
         </el-menu-item>
+        <el-menu-item index="/admin/schedule-logs">
+          <el-icon><List /></el-icon>
+          <span>调度日志</span>
+        </el-menu-item>
         <el-menu-item index="/admin/config">
           <el-icon><Setting /></el-icon>
           <span>系统配置</span>

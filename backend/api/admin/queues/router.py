@@ -1,7 +1,7 @@
 """
 管理端 — 排队队列管理路由
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from core.deps import get_current_admin
@@ -55,6 +55,19 @@ async def admin_reorder_queue(
         return resp_ok(data=result, message="队列位置已更新")
     except Exception as e:
         return resp_err(400, str(e))
+
+
+@router.get("/admin/queues/logs")
+async def admin_schedule_logs(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    session_id: int | None = Query(None, alias="sessionId"),
+    admin_id: int = Depends(get_current_admin),
+):
+    """查看调度日志。"""
+    from service.admin.service import list_schedule_logs
+    data = list_schedule_logs(page=page, page_size=page_size, session_id=session_id)
+    return resp_ok(data=data)
 
 
 @router.put("/admin/queues/move")

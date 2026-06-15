@@ -2,7 +2,8 @@
 智能充电桩调度计费系统 — 应用入口
 
 启动方式：
-    uvicorn main:app --reload
+    python main.py
+    # 或 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 """
 
 import asyncio
@@ -95,3 +96,8 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

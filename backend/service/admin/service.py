@@ -375,3 +375,44 @@ def _bjt_iso(dt: datetime | None) -> str | None:
     if dt is None:
         return None
     return (dt + BJT_OFFSET).isoformat()
+
+
+# ═══════════════════════════════════════════
+# 调度日志
+# ═══════════════════════════════════════════
+
+def list_schedule_logs(
+    page: int = 1,
+    page_size: int = 20,
+    session_id: int | None = None,
+) -> dict:
+    """查看调度日志（分页）。"""
+    with Session(engine) as db:
+        query = select(ScheduleLog)
+        if session_id:
+            query = query.where(ScheduleLog.session_id == session_id)
+
+        total = db.exec(select(func.count()).select_from(query.subquery())).one()
+        query = query.order_by(ScheduleLog.created_at.desc())
+        query = query.offset((page - 1) * page_size).limit(page_size)
+        rows = db.exec(query).all()
+
+        result = []
+        for log in rows:
+            session = db.get(ChargingSession, log.session_id)
+            from_st = db.get(Station, log.from_station_id) if log.from_station_id else None
+            to_st = db.get(Station, log.to_station_id) if log.to_station_id else None
+            result.append({
+                "id": log.id,
+                "sessionId": log.session_id,
+                "licensePlate": db.get(User, session.user_id).license_plate if session and db.get(User, session.user_id) else "未知",
+                "fromStation": from_st.name if from_st else None,
+                "toStation": to_st.name if to_st else None,
+                "fromZone": log.from_zone,
+                "toZone": log.to_zone,
+                "triggeredBy": log.triggered_by,
+                "detail": log.detail,
+                "createdAt": _bjt_iso(log.created_at),
+            })
+
+        return {"list": result, "page": page, "pageSize": page_size, "total": total}
