@@ -26,7 +26,8 @@ async def admin_list_bills(
     """查看所有账单（分页）。"""
     data = list_all_bills(
         page=page, page_size=page_size,
-        user_id=user_id, station_id=station_id, payment_status=payment_status,
+        user_id=user_id, license_plate=license_plate,
+        station_id=station_id, payment_status=payment_status,
         start_date=start_date, end_date=end_date,
     )
     return resp_ok(data=data)

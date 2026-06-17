@@ -3,7 +3,7 @@
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlmodel import Session, select
 
@@ -15,6 +15,9 @@ from model.station import Station, StationProtocol
 from model.user import User
 
 logger = logging.getLogger("charge-system.station")
+
+# 北京时间偏移（UTC+8）
+BJT_OFFSET = timedelta(hours=8)
 
 
 # ──────────────────────────────────────────────
@@ -356,6 +359,13 @@ def _get_zone_sessions(db: Session, station_id: int, zone: str, status: str) -> 
     return result
 
 
+def _bjt_iso(dt: datetime | None) -> str | None:
+    """将 UTC datetime 转为北京时间 ISO 字符串。"""
+    if dt is None:
+        return None
+    return (dt + BJT_OFFSET).isoformat()
+
+
 def _get_charging_sessions(db: Session, station_id: int) -> list[dict]:
     """获取充电区的会话列表。"""
     sessions = db.exec(
@@ -386,7 +396,7 @@ def _get_charging_sessions(db: Session, station_id: int) -> list[dict]:
             if elapsed > 0 and s.charged_energy_kwh > 0:
                 rate = s.charged_energy_kwh / elapsed  # kWh/s
                 remaining = (s.requested_energy_kwh - s.charged_energy_kwh) / rate if rate > 0 else 0
-                estimated_end = (now.isoformat() if remaining < 3600 * 24 else None)
+                estimated_end = (_bjt_iso(now + timedelta(seconds=remaining)) if remaining < 3600 * 24 else None)
 
         result.append({
             "sessionId": s.id,

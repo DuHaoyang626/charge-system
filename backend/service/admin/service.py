@@ -262,6 +262,7 @@ def list_all_bills(
     page: int = 1,
     page_size: int = 20,
     user_id: int | None = None,
+    license_plate: str | None = None,
     station_id: int | None = None,
     payment_status: str | None = None,
     start_date: str | None = None,
@@ -272,6 +273,8 @@ def list_all_bills(
         query = select(Bill)
         if user_id:
             query = query.where(Bill.user_id == user_id)
+        if license_plate:
+            query = query.join(User).where(User.license_plate == license_plate)
         if station_id:
             query = query.where(Bill.station_id == station_id)
         if payment_status:

@@ -8,11 +8,16 @@ from sqlmodel import Session as DBSession, select
 
 from core.database import engine as db_engine
 from model.bill import Bill
+from model.config import ElectricityPrice, ServiceFeeTier
 from model.protocol import Protocol
 from model.session import ChargingSession
 from model.station import Station
 from model.user import User
 from model.user_protocol import UserProtocol
+from service.billing.engine import (
+    PriceSlot, ServiceTier as BillingTier,
+    calculate_electricity_fee, calculate_service_fee,
+)
 
 # 北京时间偏移（UTC+8）
 BJT_OFFSET = timedelta(hours=8)
@@ -78,17 +83,76 @@ def build_session_detail(session: ChargingSession) -> dict:
                     remaining_sec = remaining_energy / rate
                     estimated_end = _bjt_iso(now + timedelta(seconds=remaining_sec))
 
-        # 实时费用
+        # 实时费用 — 使用计费引擎计算
         base_fee = station.base_service_fee if station else 5.0
         current_fee = {
-            "electricityFee": session.charged_energy_kwh if session.status == "charging" else 0,
+            "electricityFee": 0,
             "electricityDetails": [],
             "baseServiceFee": base_fee if session.zone in ("waiting", "charging") else 0,
             "timeServiceFee": 0,
             "totalServiceFee": base_fee if session.zone in ("waiting", "charging") else 0,
-            "totalFee": (session.charged_energy_kwh if session.status == "charging" else 0)
-                        + (base_fee if session.zone in ("waiting", "charging") else 0),
+            "totalFee": base_fee if session.zone in ("waiting", "charging") else 0,
         }
+
+        if session.status == "charging" and session.started_charging_at:
+            # 加载电价时段和服务费阶梯配置
+            price_rows = db.exec(
+                select(ElectricityPrice).order_by(ElectricityPrice.start_time)
+            ).all()
+            prices = [
+                PriceSlot(period_name=r.period_name, start_time=r.start_time,
+                          end_time=r.end_time, price_per_kwh=r.price_per_kwh)
+                for r in price_rows
+            ]
+            tier_rows = db.exec(
+                select(ServiceFeeTier).order_by(ServiceFeeTier.min_minutes)
+            ).all()
+            tiers = [
+                BillingTier(tier_name=r.tier_name or f"{r.min_minutes}-{r.max_minutes or '∞'}分钟",
+                            min_minutes=r.min_minutes, max_minutes=r.max_minutes,
+                            rate_per_minute=r.rate_per_minute)
+                for r in tier_rows
+            ]
+
+            # 充电时长（分钟）
+            charging_seconds = (now - session.started_charging_at).total_seconds()
+            charging_minutes = max(1, int(charging_seconds / 60))
+
+            # 电费：按充电时段比例分摊已充电量
+            if session.charged_energy_kwh > 0:
+                elec_result = calculate_electricity_fee(
+                    start_time=session.started_charging_at,
+                    end_time=now,
+                    total_energy_kwh=session.charged_energy_kwh,
+                    prices=prices,
+                )
+                electricity_fee = elec_result.total
+                electricity_details = [
+                    {"period": item.name, "energy": item.quantity,
+                     "price": item.unit_price, "fee": item.fee}
+                    for item in elec_result.items
+                ]
+            else:
+                electricity_fee = 0
+                electricity_details = []
+
+            # 服务费
+            svc_result = calculate_service_fee(
+                charging_minutes=charging_minutes,
+                base_fee=base_fee,
+                tiers=tiers,
+            )
+            time_service_fee = round(svc_result.total - base_fee, 2)
+            total_service_fee = svc_result.total
+
+            current_fee = {
+                "electricityFee": electricity_fee,
+                "electricityDetails": electricity_details,
+                "baseServiceFee": base_fee,
+                "timeServiceFee": time_service_fee,
+                "totalServiceFee": total_service_fee,
+                "totalFee": round(electricity_fee + total_service_fee, 2),
+            }
 
         # 账单摘要
         bill = None

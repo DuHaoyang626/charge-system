@@ -13,11 +13,16 @@ from core.deps import get_current_user
 from core.exceptions import AppException, Err
 from core.response import resp_err, resp_ok
 from model.bill import Bill
+from model.config import ElectricityPrice, ServiceFeeTier
 from model.protocol import Protocol
 from model.schedule_log import ScheduleLog
 from model.session import ChargingSession
 from model.station import Station, StationProtocol
 from model.user_protocol import UserProtocol
+from service.billing.engine import (
+    PriceSlot, ServiceTier as BillingTier,
+    calculate_electricity_fee, calculate_service_fee,
+)
 from service.dispatch.service import find_best_station
 from service.queue.service import cancel_session, enqueue, move_to_station
 from service.session.service import build_session_detail
@@ -451,7 +456,52 @@ async def api_update_energy(
                 if rate > 0 and remaining > 0:
                     remaining_sec = remaining / rate
                     estimated_end = _bjt_iso(now + timedelta(seconds=remaining_sec))
-                    estimated_fee = round(remaining * 0.8 + session.charged_energy_kwh * 0.8 + 5.0, 2)
+
+                    # 使用数据库配置的分时电价计算预估费用
+                    price_rows = db.exec(
+                        select(ElectricityPrice).order_by(ElectricityPrice.start_time)
+                    ).all()
+                    prices = [
+                        PriceSlot(period_name=r.period_name, start_time=r.start_time,
+                                  end_time=r.end_time, price_per_kwh=r.price_per_kwh)
+                        for r in price_rows
+                    ]
+                    tier_rows = db.exec(
+                        select(ServiceFeeTier).order_by(ServiceFeeTier.min_minutes)
+                    ).all()
+                    tiers = [
+                        BillingTier(tier_name=r.tier_name or f"{r.min_minutes}-{r.max_minutes or '∞'}分钟",
+                                    min_minutes=r.min_minutes, max_minutes=r.max_minutes,
+                                    rate_per_minute=r.rate_per_minute)
+                        for r in tier_rows
+                    ]
+
+                    # 已充电部分按实际电价计算
+                    charged_elec = calculate_electricity_fee(
+                        start_time=session.started_charging_at,
+                        end_time=now,
+                        total_energy_kwh=session.charged_energy_kwh,
+                        prices=prices,
+                    )
+                    # 剩余部分按当前时间到预计结束估算（按当前时段单一电价简化）
+                    remaining_elec = calculate_electricity_fee(
+                        start_time=now,
+                        end_time=now + timedelta(seconds=remaining_sec),
+                        total_energy_kwh=remaining,
+                        prices=prices,
+                    )
+                    total_elec_fee = round(charged_elec.total + remaining_elec.total, 2)
+
+                    # 服务费：按总预计充电时长估算
+                    total_minutes = max(1, int((elapsed + remaining_sec) / 60))
+                    base_fee = db.get(Station, session.station_id).base_service_fee if db.get(Station, session.station_id) else 5.0
+                    svc_result = calculate_service_fee(
+                        charging_minutes=total_minutes,
+                        base_fee=base_fee,
+                        tiers=tiers,
+                    )
+
+                    estimated_fee = round(total_elec_fee + svc_result.total, 2)
 
         return resp_ok(
         data={
