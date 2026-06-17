@@ -9,6 +9,7 @@ from sqlmodel import Session, select, func
 
 from core.database import engine
 from core.exceptions import AppException, Err
+from core.logger import system_logger
 from model.bill import Bill
 from model.config import ElectricityPrice, ServiceFeeTier
 from model.session import ChargingSession
@@ -174,6 +175,11 @@ def generate_bill(session_id: int) -> Bill | None:
         logger.info(
             f"账单 {bill.id} 已生成: session={session_id}, "
             f"电费={electricity_fee}, 服务费={total_service_fee}, 合计={total_fee}"
+        )
+        system_logger.info("billing",
+            f"账单 {bill.id} 已生成: session={session_id}, "
+            f"用户={bill.user_id}, 充电桩={bill.station_name}, "
+            f"电量={energy}kWh, 电费={electricity_fee}, 服务费={total_service_fee}, 合计={total_fee}"
         )
         return bill
 
@@ -357,6 +363,10 @@ def process_payment(bill_id: int, user_id: int, payment_method: str) -> dict[str
         logger.info(
             f"账单 {bill_id} 支付成功: method={payment_method}, "
             f"transaction={bill.transaction_id}"
+        )
+        system_logger.info("billing",
+            f"账单 {bill_id} 支付成功: 用户={bill.user_id}, "
+            f"金额=¥{bill.total_fee}, 方式={payment_method}, 交易号={bill.transaction_id}"
         )
 
         return {

@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 from core.database import engine as db_engine
 from core.deps import get_current_user
 from core.exceptions import AppException, Err
+from core.logger import system_logger
 from core.response import resp_err, resp_ok
 from model.bill import Bill
 from model.config import ElectricityPrice, ServiceFeeTier
@@ -148,6 +149,7 @@ async def api_create_session(
         db.refresh(session)
 
     wait_mins = _estimate_wait(best_station)
+    system_logger.info("sessions", f"用户 {user_id} 发起充电请求: session={session.id}, 充电桩={best_station.name}, 电量={body.requested_energy_kwh}kWh, 预估等待={wait_mins}分钟")
     return resp_ok(
         data={
             "sessionId": session.id,
@@ -344,6 +346,8 @@ def _handle_confirm(
         ))
         db.commit()
 
+        system_logger.info("sessions", f"用户 {session.user_id} 确认排队→等待: session={session.id}, 充电桩={station.name if station else '?'}, 协议={protocol.name}")
+
         return resp_ok(
             data={
                 "sessionId": session.id, "status": "waiting",
@@ -382,6 +386,8 @@ def _handle_confirm(
         detail=f"协议: {protocol.name} ({protocol.power_kw}kW)",
     ))
     db.commit()
+
+    system_logger.info("sessions", f"用户 {session.user_id} 开始充电: session={session.id}, 充电桩={station.name if station else '?'}, 协议={protocol.name}({protocol.power_kw}kW)")
 
     return resp_ok(
         data={
@@ -724,6 +730,8 @@ async def api_stop_charging(
         db.add(bill)
         db.commit()
         db.refresh(bill)
+
+        system_logger.info("sessions", f"用户 {user_id} 主动结束充电: session={session_id}, 充电桩={station_name}, 电量={energy}kWh, 费用=¥{bill.total_fee}")
 
         return resp_ok(
             data={

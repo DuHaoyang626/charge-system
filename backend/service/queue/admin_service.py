@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 
 from core.database import engine
 from core.exceptions import AppException
+from core.logger import system_logger
 from model.schedule_log import ScheduleLog
 from model.session import ChargingSession
 from model.station import Station
@@ -111,6 +112,8 @@ def reorder_queue(
         ))
         db.commit()
 
+        system_logger.info("admin_queue", f"管理员重排: 会话 {session_id} 在充电桩 {station_id} 的 {zone}区，位置 {current_positions[session_id]}→{new_position}")
+
         return {
             "stationId": station_id,
             "zone": zone,
@@ -201,6 +204,8 @@ def move_session_to_station(
             detail=f"管理员移桩: {source_station.name if source_station else ''} → {target_station.name}",
         ))
         db.commit()
+
+        system_logger.info("admin_queue", f"管理员移桩: 会话 {session_id} 从充电桩 {source_station.name if source_station else '?'}移到 {target_station.name}(id={target_station_id})")
 
         return {
             "sessionId": session.id,

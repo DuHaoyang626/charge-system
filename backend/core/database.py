@@ -9,6 +9,7 @@ import logging
 from sqlmodel import SQLModel, Session, create_engine, select
 
 from core.config import settings
+from core.logger import system_logger
 
 logger = logging.getLogger("charge-system.database")
 
@@ -32,6 +33,7 @@ def init_db() -> None:
     _migrate_schema()
     _seed_initial_data()
     logger.info("数据库初始化完成")
+    system_logger.info("database", "数据库初始化完成（含 log_records 表）")
 
 
 def _migrate_schema() -> None:
@@ -343,6 +345,7 @@ def _seed_initial_data() -> None:
 
         session.commit()
         logger.info("种子数据写入完成（含 %d 条历史充电记录）", session_num)
+        system_logger.info("database", f"种子数据写入完成（含 {session_num} 条历史充电记录）")
 
 
 # ── 延迟导入（避免循环依赖） ──
@@ -355,3 +358,4 @@ from model.session import ChargingSession
 from model.bill import Bill
 from model.config import GlobalConfig, ElectricityPrice, ServiceFeeTier
 from model.schedule_log import ScheduleLog
+from model.log_record import LogRecord

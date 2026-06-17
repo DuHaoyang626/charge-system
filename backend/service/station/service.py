@@ -9,6 +9,7 @@ from sqlmodel import Session, select
 
 from core.database import engine
 from core.exceptions import AppException, Err
+from core.logger import system_logger
 from model.protocol import Protocol
 from model.session import ChargingSession
 from model.station import Station, StationProtocol
@@ -120,6 +121,7 @@ def create_station(
         db.commit()
         db.refresh(station)
 
+        system_logger.info("station", f"创建充电桩: id={station.id}, name={name}")
         return {"id": station.id, "name": station.name, "status": station.status}
 
 
@@ -176,6 +178,7 @@ def update_station(station_id: int, data: dict) -> dict:
         db.refresh(station)
 
         protocols = _get_station_protocols(db, station_id)
+        system_logger.info("station", f"更新充电桩: id={station_id}, name={station.name}")
         return {
             "id": station.id,
             "name": station.name,
@@ -206,6 +209,7 @@ def delete_station(station_id: int) -> None:
 
         db.delete(station)
         db.commit()
+        system_logger.info("station", f"删除充电桩: id={station_id}")
 
 
 def start_station(station_id: int) -> dict:
@@ -218,6 +222,7 @@ def start_station(station_id: int) -> dict:
         station.updated_at = datetime.utcnow()
         db.add(station)
         db.commit()
+        system_logger.info("station", f"启动充电桩: id={station_id}")
         return {"id": station.id, "status": station.status}
 
 
@@ -233,6 +238,7 @@ def stop_station(station_id: int) -> dict:
         station.updated_at = datetime.utcnow()
         db.add(station)
         db.commit()
+        system_logger.info("station", f"停止充电桩(正常停运): id={station_id}, name={station.name}")
         return {"id": station.id, "status": station.status, "message": "充电桩将在现有队列处理完毕后停止"}
 
 
@@ -282,6 +288,11 @@ def emergency_stop_station(station_id: int, algorithm: str = "shortest_time_sing
 
     total = len(movable_ids)
     moved_count = len(result.moved_sessions)
+
+    system_logger.warning("station",
+        f"紧急停运充电桩: id={station_id}, name={station_name}, "
+        f"已重调度 {moved_count}/{total} 辆, 充电中 {len(charging_ids)} 辆"
+    )
 
     return {
         "message": f"紧急停止完成，{moved_count}/{total} 辆已重调度",

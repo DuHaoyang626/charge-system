@@ -12,6 +12,7 @@ from sqlmodel import Session, select
 
 from core.database import engine
 from core.exceptions import AppException, Err
+from core.logger import system_logger
 from model.session import ChargingSession
 from model.station import Station
 
@@ -43,6 +44,7 @@ def enqueue(db: Session, session: ChargingSession, station: Station) -> int:
     db_station.queue_count += 1
     db.add(db_station)
 
+    system_logger.info("queue", f"会话 {session.id} 入队充电桩 {db_station.name}(id={db_station.id})，位置 {position}")
     return position
 
 
@@ -85,6 +87,11 @@ def move_to_station(session_id: int, target_station_id: int, user_id: int) -> di
         db_session.queue_position = new_position
         db.add(db_session)
         db.commit()
+
+        system_logger.info("queue",
+            f"会话 {session_id} 换队: 从充电桩 {old_station.name if old_station else '?'} "
+            f"到 {target.name}(id={target.id})，新位置 {new_position}"
+        )
 
         return {
             "sessionId": db_session.id,
@@ -158,6 +165,8 @@ def cancel_session(session_id: int, user_id: int) -> dict:
 
         db.add(db_session)
         db.commit()
+
+        system_logger.info("queue", f"会话 {session_id} 已取消，状态={db_session.status}，{message}")
 
         return {
             "sessionId": db_session.id,

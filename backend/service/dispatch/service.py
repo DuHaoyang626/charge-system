@@ -12,6 +12,7 @@ import logging
 from sqlmodel import Session, select
 
 from core.database import engine
+from core.logger import system_logger
 from model.session import ChargingSession
 from model.station import Station, StationProtocol
 
@@ -67,6 +68,17 @@ def find_best_station(user_id: int, protocol_ids: list[int]) -> Station | None:
             if wait < best_wait:
                 best_wait = wait
                 best = s
+
+        if best:
+            wait_min = _estimate_wait(db, best)
+            logger.info(
+                "为用户 %d 选择充电桩 %s (id=%d)，预估等待 %d 分钟",
+                user_id, best.name, best.id, wait_min,
+            )
+            system_logger.info("dispatch", f"用户 {user_id} 调度到充电桩 {best.name}(id={best.id})，预估等待 {wait_min} 分钟")
+        else:
+            logger.info("为用户 %d 未找到可用充电桩", user_id)
+            system_logger.warning("dispatch", f"用户 {user_id} 未找到可用充电桩")
 
         return best
 

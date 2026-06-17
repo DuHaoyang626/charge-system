@@ -17,6 +17,7 @@ from datetime import datetime
 from sqlmodel import Session, select
 
 from core.database import engine
+from core.logger import system_logger
 from model.schedule_log import ScheduleLog
 from model.session import ChargingSession
 from model.station import Station
@@ -501,6 +502,7 @@ def get_strategy(algorithm: str | None = None) -> DispatchStrategy:
     cls = _STRATEGY_MAP.get(algorithm)
     if cls is None:
         logger.warning(f"未知算法 {algorithm}，使用默认 shortest_time_single")
+        system_logger.warning("strategy", f"未知调度算法 {algorithm}，使用默认 shortest_time_single")
         cls = ShortestTimeSingleStrategy
     return cls()
 

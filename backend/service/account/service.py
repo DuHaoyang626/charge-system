@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 
 from core.database import engine
 from core.exceptions import AppException, Err
+from core.logger import system_logger
 from core.security import create_access_token, get_password_hash, verify_password
 from model.protocol import Protocol
 from model.station import Station
@@ -68,6 +69,7 @@ def register(
         db.refresh(user)
 
     token = create_access_token(user_id=user.id, role=user.role)
+    system_logger.info("account", f"新用户注册成功: id={user.id}, 车牌={license_plate}, 用户名={user_name}")
     return {
         "userId": user.id,
         "licensePlate": user.license_plate,
@@ -89,9 +91,11 @@ def login(license_plate: str, password: str) -> dict:
 
         # 防撞库：账号不存在和密码错误返回相同信息
         if user is None or not verify_password(password, user.password):
+            system_logger.warning("account", f"登录失败: 车牌={license_plate}")
             raise AppException(*Err.INVALID_CREDENTIALS)
 
     token = create_access_token(user_id=user.id, role=user.role)
+    system_logger.info("account", f"用户登录成功: id={user.id}, 车牌={license_plate}, 角色={user.role}")
     return {
         "userId": user.id,
         "licensePlate": user.license_plate,

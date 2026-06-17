@@ -18,6 +18,7 @@ from datetime import datetime
 from sqlmodel import Session, select
 
 from core.database import engine
+from core.logger import system_logger
 from model.protocol import Protocol
 from model.schedule_log import ScheduleLog
 from model.session import ChargingSession
@@ -41,6 +42,7 @@ class DispatchLoop:
         self._running = True
         self._task = asyncio.create_task(self._loop())
         logger.info("自动调度循环已启动 (间隔 10s)")
+        system_logger.info("dispatch_loop", "自动调度循环已启动 (间隔 10s)")
 
     async def stop(self):
         self._running = False
@@ -51,6 +53,7 @@ class DispatchLoop:
             except asyncio.CancelledError:
                 pass
         logger.info("自动调度循环已停止")
+        system_logger.info("dispatch_loop", "自动调度循环已停止")
 
     async def _loop(self):
         while self._running:
@@ -58,6 +61,7 @@ class DispatchLoop:
                 await self._tick()
             except Exception as e:
                 logger.error(f"调度 tick 异常: {e}", exc_info=True)
+                system_logger.error("dispatch_loop", f"调度 tick 异常: {e}")
             await asyncio.sleep(DISPATCH_INTERVAL)
 
     async def _tick(self):
@@ -195,6 +199,10 @@ class DispatchLoop:
                         f"电费={electricity_fee}, 服务费={total_service_fee}, "
                         f"合计={bill.total_fee}"
                     )
+                    system_logger.info("dispatch_loop",
+                        f"会话 {s.id} 充电完成: 用户={s.user_id}, 充电桩={station_name}, "
+                        f"电量={energy}kWh, 电费={electricity_fee}, 合计={bill.total_fee}"
+                    )
 
                     if station and station.status == "stopping":
                         if (station.queue_count == 0
@@ -203,6 +211,7 @@ class DispatchLoop:
                             station.status = "stopped"
                             db.add(station)
                             logger.info(f"充电桩 {station.name} 队列已清空，自动停止")
+                            system_logger.info("dispatch_loop", f"充电桩 {station.name}(id={station.id}) 无车辆，自动关闭停止")
 
                     # 完成后移除跟踪
                     self._last_tick.pop(s.id, None)
@@ -280,6 +289,7 @@ class DispatchLoop:
                         logger.info(
                             f"会话 {session.id} 两区空闲→自动进入等待区，标记充电确认"
                         )
+                        system_logger.info("dispatch_loop", f"会话 {session.id} 排队→等待区（充电桩 {station.name} 两区空闲，自动推进）")
                     db.commit()
 
                 elif station.waiting_count < station.waiting_capacity:
@@ -288,6 +298,7 @@ class DispatchLoop:
                     db.add(session)
                     db.commit()
                     logger.info(f"会话 {session.id} 标记为就绪（排队→等待）")
+                    system_logger.info("dispatch_loop", f"会话 {session.id} 等待区就绪，可进入充电（充电桩 {station.name}）")
                     # 每次 tick 只处理一个，避免连续弹出多个等待确认
                     break
 
@@ -340,6 +351,7 @@ class DispatchLoop:
                     f"会话 {session.id} 标记为就绪（等待→充电），"
                     f"推荐协议: {protocol.name} ({protocol.power_kw}kW)"
                 )
+                system_logger.info("dispatch_loop", f"会话 {session.id} 等待→充电就绪，推荐协议 {protocol.name}({protocol.power_kw}kW，充电桩 {station.name})")
                 # 每次 tick 只处理一个
                 break
 

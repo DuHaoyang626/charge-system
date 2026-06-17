@@ -8,6 +8,7 @@ from sqlmodel import Session, select, func
 
 from core.database import engine
 from core.exceptions import AppException
+from core.logger import system_logger
 from model.bill import Bill
 from model.config import GlobalConfig, ElectricityPrice, ServiceFeeTier
 from model.session import ChargingSession
@@ -173,6 +174,7 @@ def update_configs(data: dict) -> dict:
 
         db.commit()
 
+    system_logger.info("admin", f"管理员更新配置: {list(data.keys())}")
     return get_all_configs()
 
 
