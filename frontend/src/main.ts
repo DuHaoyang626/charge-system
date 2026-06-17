@@ -1,7 +1,6 @@
 /**
  * 应用入口
  * 注册 Element Plus、Router、Pinia
- * 加载全局样式
  */
 
 import { createApp } from 'vue'
@@ -9,12 +8,6 @@ import { createPinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
-
-// 全局样式
-import '@/styles/theme.css'
-import '@/styles/glassmorphism.css'
-import '@/styles/transitions.css'
-import '@/styles/responsive.css'
 
 import App from './App.vue'
 import router from './router'

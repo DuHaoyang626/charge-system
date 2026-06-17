@@ -1,6 +1,6 @@
 <template>
-  <div class="report-view">
-    <div class="page-header">
+  <div class="report-view" v-loading="loading">
+    <div class="page-header-responsive">
       <div>
         <h2>📊 数据报表</h2>
         <p class="page-desc">充电量、收入和利用率统计</p>
@@ -34,19 +34,19 @@
       <div class="card-title">💰 收入统计</div>
       <div class="summary-grid" v-if="revenue">
         <div class="insight-item glass-card-strong">
-          <span class="summary-value">¥{{ revenue.totalRevenue }}</span>
+          <span class="summary-value">¥{{ revenue?.totalRevenue ?? '0.00' }}</span>
           <span class="summary-label">总收入</span>
         </div>
         <div class="insight-item glass-card-strong">
-          <span class="summary-value">¥{{ revenue.electricityRevenue }}</span>
+          <span class="summary-value">¥{{ revenue?.electricityRevenue ?? '0.00' }}</span>
           <span class="summary-label">电费收入</span>
         </div>
         <div class="insight-item glass-card-strong">
-          <span class="summary-value">¥{{ revenue.serviceRevenue }}</span>
+          <span class="summary-value">¥{{ revenue?.serviceRevenue ?? '0.00' }}</span>
           <span class="summary-label">服务费收入</span>
         </div>
         <div class="insight-item glass-card-strong">
-          <span class="summary-value">{{ revenue.paidSessions }}</span>
+          <span class="summary-value">{{ revenue?.paidSessions ?? 0 }}</span>
           <span class="summary-label">已支付订单</span>
         </div>
       </div>
@@ -123,92 +123,18 @@ onMounted(fetchReports)
 
 <style scoped>
 .report-view { max-width: 960px; display: flex; flex-direction: column; gap: 16px; }
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-}
-
-.page-header h2 {
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin-bottom: 4px;
-}
-
-.page-desc {
-  font-size: 14px;
-  color: var(--text-tertiary);
-  margin: 0;
-}
-
-.report-card {
-  padding: 24px;
-}
-
-.card-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 16px;
-}
-
-.summary-grid {
-  display: flex;
-  gap: 16px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-}
-
-.insight-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  min-width: 120px;
-  padding: 16px 24px;
-  border-radius: 8px;
-  flex: 1;
-}
-
-.summary-value {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--text-primary);
-  font-family: 'JetBrains Mono', monospace;
-}
-
-.summary-label {
-  font-size: 12px;
-  color: var(--text-tertiary);
-  margin-top: 4px;
-}
-
-.report-table {
-  margin-top: 8px;
-}
-
-.no-data {
-  text-align: center;
-  padding: 32px;
-  color: var(--text-tertiary);
-  font-size: 14px;
-}
-
-.util-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.util-bar .el-progress {
-  flex: 1;
-}
-
-.util-text {
-  font-size: 12px;
-  color: var(--text-tertiary);
-  font-family: 'JetBrains Mono', monospace;
-  white-space: nowrap;
-}
+.page-header-responsive { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: flex-start; margin-bottom: 4px; }
+.page-header-responsive h2 { font-size: clamp(18px, 2.5vw, 22px); font-weight: 700; margin: 0; }
+.page-desc { font-size: 14px; color: var(--text-tertiary); margin: 2px 0 0; }
+.report-card { padding: 24px; border-radius: 10px; }
+.card-title { font-size: 16px; font-weight: 600; color: var(--text-primary); margin-bottom: 16px; }
+.summary-grid { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+.insight-item { display: flex; flex-direction: column; align-items: center; min-width: 120px; padding: 16px 24px; border-radius: 8px; flex: 1; }
+.summary-value { font-size: 24px; font-weight: 700; color: var(--text-primary); font-family: 'JetBrains Mono', monospace; }
+.summary-label { font-size: 12px; color: var(--text-tertiary); margin-top: 4px; }
+.report-table { margin-top: 8px; }
+.no-data { text-align: center; padding: 32px; color: var(--text-tertiary); }
+.util-bar { display: flex; align-items: center; gap: 8px; }
+.util-bar .el-progress { flex: 1; }
+.util-text { font-size: 12px; color: var(--text-tertiary); font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
 </style>

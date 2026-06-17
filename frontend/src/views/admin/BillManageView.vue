@@ -1,13 +1,8 @@
 <template>
   <div class="bill-manage">
-    <div class="page-header">
-      <div>
-        <h2>📋 账单管理</h2>
-        <p class="page-desc">查看和管理所有充电账单</p>
-      </div>
-    </div>
+    <h2>账单管理</h2>
 
-    <div class="glass-card filter-card">
+    <el-card shadow="never" class="filter-card">
       <el-form :inline="true" size="small">
         <el-form-item label="支付状态">
           <el-select v-model="filters.paymentStatus" placeholder="全部" clearable style="width:120px" @change="fetchList(1)">
@@ -21,51 +16,47 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <button class="btn-glass btn-glass-sm" @click="resetFilters">🔄 重置</button>
-          <button class="btn-glass btn-glass-sm" @click="fetchList()" :disabled="loading">
-            {{ loading ? '⟳' : '⟳ 刷新' }}
-          </button>
+          <el-button @click="resetFilters">重置</el-button>
+          <el-button type="primary" :icon="Refresh" @click="fetchList()" :loading="loading" />
         </el-form-item>
       </el-form>
-    </div>
+    </el-card>
 
-    <div class="glass-card table-card">
-      <div class="table-scroll">
-        <el-table :data="bills" v-loading="loading" stripe style="width:100%" @row-click="openDetail">
+    <el-card shadow="never">
+      <el-table :data="bills" v-loading="loading" stripe style="width:100%" @row-click="openDetail">
         <el-table-column prop="billId" label="账单ID" width="70" />
-        <el-table-column label="车牌号" width="110">
+        <el-table-column label="车牌号" width="100">
           <template #default="{ row }">{{ row.user?.licensePlate }}</template>
         </el-table-column>
-        <el-table-column label="充电桩" min-width="130">
+        <el-table-column label="充电桩" min-width="120">
           <template #default="{ row }">{{ row.station?.name }}</template>
         </el-table-column>
         <el-table-column label="电量" width="80">
           <template #default="{ row }">{{ row.chargedEnergyKwh }} kWh</template>
         </el-table-column>
-        <el-table-column prop="totalFee" label="总金额" width="100">
+        <el-table-column prop="totalFee" label="总金额" width="90">
           <template #default="{ row }">¥{{ row.totalFee?.toFixed(2) }}</template>
         </el-table-column>
-        <el-table-column label="支付状态" width="100">
+        <el-table-column label="支付状态" width="90">
           <template #default="{ row }">
             <el-tag :type="row.paymentStatus === 'paid' ? 'success' : 'warning'" size="small" effect="light">
-              {{ row.paymentStatus === 'paid' ? '✅ 已支付' : '⏳ 未支付' }}
+              {{ row.paymentStatus === 'paid' ? '已支付' : '未支付' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="创建时间" min-width="150">
+        <el-table-column label="创建时间" min-width="140">
           <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
         </el-table-column>
       </el-table>
 
-      </div>
       <div class="pagination" v-if="total > pageSize">
         <el-pagination v-model:current-page="page" :page-size="pageSize" :total="total"
           layout="prev, pager, next" @current-change="fetchList" />
       </div>
-    </div>
+    </el-card>
 
     <!-- 详情对话框 -->
-    <el-dialog v-model="showDetail" title="账单详情" :width="520" class="glass-dialog">
+    <el-dialog v-model="showDetail" title="账单详情" :width="520">
       <template v-if="detail">
         <div class="detail-row"><label>账单 ID</label><span>{{ detail.id }}</span></div>
         <div class="detail-row"><label>会话 ID</label><span>{{ detail.sessionId }}</span></div>
@@ -78,13 +69,13 @@
         <div class="detail-row total"><label>总费用</label><span class="total-fee">¥{{ detail.totalFee?.toFixed(2) }}</span></div>
         <div class="detail-row"><label>支付状态</label>
           <el-tag :type="detail.paymentStatus === 'paid' ? 'success' : 'warning'" size="small">
-            {{ detail.paymentStatus === 'paid' ? '✅ 已支付' : '⏳ 未支付' }}
+            {{ detail.paymentStatus === 'paid' ? '已支付' : '未支付' }}
           </el-tag>
         </div>
         <div class="detail-row" v-if="detail.transactionId"><label>交易流水</label><span class="txn">{{ detail.transactionId }}</span></div>
       </template>
       <template #footer>
-        <button class="btn-glass btn-glass-sm" @click="showDetail = false">关闭</button>
+        <el-button @click="showDetail = false">关闭</el-button>
       </template>
     </el-dialog>
   </div>
@@ -92,6 +83,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getAdminBillsApi, getAdminBillDetailApi } from '@/api/admin/bill'
 import { getAdminStationsApi } from '@/api/admin/station'
@@ -149,91 +141,14 @@ onMounted(() => { fetchList(1); fetchStations() })
 </script>
 
 <style scoped>
-.bill-manage {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-}
-
-.page-header h2 {
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin-bottom: 4px;
-}
-
-.page-desc {
-  font-size: 14px;
-  color: var(--text-tertiary);
-  margin: 0;
-}
-
-.filter-card {
-  padding: 16px;
-}
-
-.filter-card :deep(.el-form) {
-  margin-bottom: -18px;
-}
-
-.table-card {
-  padding: 4px;
-  overflow: hidden;
-}
-
-.pagination {
-  display: flex;
-  justify-content: center;
-  margin-top: 16px;
-  padding: 12px 0;
-}
-
-.detail-row {
-  display: flex;
-  padding: 8px 0;
-  font-size: 14px;
-  border-bottom: 1px solid var(--border-light);
-}
-
-.detail-row:last-child {
-  border-bottom: none;
-}
-
-.detail-row label {
-  width: 100px;
-  color: var(--text-tertiary);
-  flex-shrink: 0;
-}
-
-.detail-row span {
-  color: var(--text-primary);
-}
-
-.detail-row .fee {
-  color: var(--text-secondary);
-  font-family: 'JetBrains Mono', monospace;
-}
-
-.detail-row.total {
-  font-weight: 600;
-}
-
-.detail-row .total-fee {
-  color: var(--color-danger);
-  font-size: 16px;
-  font-weight: 700;
-  font-family: 'JetBrains Mono', monospace;
-}
-
-.txn {
-  color: var(--color-primary);
-  font-size: 12px;
-  font-family: 'JetBrains Mono', monospace;
-}
+.bill-manage h2 { font-size: 22px; font-weight: 600; margin-bottom: 16px; color: #1E293B; }
+.filter-card { border-radius: 10px; margin-bottom: 16px; }
+.pagination { display: flex; justify-content: center; margin-top: 16px; }
+.detail-row { display: flex; padding: 6px 0; font-size: 14px; border-bottom: 1px solid #F1F5F9; }
+.detail-row label { width: 100px; color: #94A3B8; flex-shrink: 0; }
+.detail-row span { color: #1E293B; }
+.detail-row .fee { color: #475569; font-family: 'JetBrains Mono', monospace; }
+.detail-row.total { font-weight: 600; }
+.detail-row .total-fee { color: #EA580C; font-size: 16px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+.txn { color: #2563EB; font-size: 12px; font-family: 'JetBrains Mono', monospace; }
 </style>

@@ -1,102 +1,98 @@
 <template>
   <div class="home">
-    <!-- 用户信息卡片 + 快捷操作 -->
-    <div class="hero-section">
-      <div class="glass-card user-card">
-        <div class="user-info">
-          <div class="user-avatar glass-card-strong">
-            <el-icon :size="clampIcon(24, 32)" color="var(--color-primary)">
-              <User />
-            </el-icon>
-          </div>
-          <div class="user-detail">
-            <h3>{{ user?.userName }}</h3>
-            <p class="user-meta">
-              <el-tag size="small" type="primary" effect="plain">{{ user?.licensePlate }}</el-tag>
-              <span class="meta-item">🔋 {{ user?.batteryCapacity }} kWh</span>
-            </p>
-            <div class="protocol-tags" v-if="user?.protocols?.length">
-              <span class="meta-label">支持协议：</span>
-              <el-tag
-                v-for="p in user!.protocols"
-                :key="p.id"
-                size="small"
-                effect="plain"
-                class="glass-badge"
-              >{{ p.name }}</el-tag>
-            </div>
+    <!-- 用户信息卡片 -->
+    <el-card shadow="never" class="user-card">
+      <div class="user-info">
+        <div class="user-avatar">
+          <el-icon :size="32" color="#FFFFFF">
+            <User />
+          </el-icon>
+        </div>
+        <div class="user-detail">
+          <h3>{{ user?.userName }}</h3>
+          <p class="user-meta">
+            <el-tag size="small" type="primary" effect="plain">{{ user?.licensePlate }}</el-tag>
+            <span class="meta-item">电池容量 {{ user?.batteryCapacity }} kWh</span>
+          </p>
+          <div class="protocol-tags" v-if="user?.protocols?.length">
+            <span class="meta-label">支持协议：</span>
+            <el-tag
+              v-for="p in user!.protocols"
+              :key="p.id"
+              size="small"
+              effect="plain"
+              :color="'#DBEAFE'"
+              style="border: none; color: #1E40AF;"
+            >
+              {{ p.name }}
+            </el-tag>
           </div>
         </div>
       </div>
-
-      <!-- 快捷操作 -->
-      <div class="quick-actions">
-        <button class="btn-glass btn-glass-primary btn-glass-lg quick-btn" @click="goToCreate">
-          ⚡ 发起充电
-        </button>
-        <button class="btn-glass btn-glass-lg quick-btn" @click="goToBills">
-          📋 历史账单
-        </button>
-        <button v-if="isAdmin" class="btn-glass btn-glass-danger btn-glass-lg quick-btn" @click="goToAdmin">
-          🔐 管理后台
-        </button>
-      </div>
-    </div>
+    </el-card>
 
     <!-- 活动会话卡片 -->
-    <template v-if="activeSession">
-      <div class="glass-card session-card" @click="goToSession" style="cursor: pointer;">
-        <div class="session-header">
-          <ChargingStatusBadge :status="activeSession.status" />
-          <span class="session-station">{{ activeSession.stationName }}</span>
-          <span class="tap-hint hide-xs">点击查看详情 →</span>
-        </div>
-        <div class="session-body">
+    <el-card
+      v-if="activeSession"
+      shadow="never"
+      class="active-session-card"
+      @click="goToSession"
+      style="cursor: pointer;"
+    >
+      <div class="session-header">
+        <ChargingStatusBadge :status="activeSession.status" />
+        <span class="session-station">{{ activeSession.stationName }}</span>
+      </div>
+      <div class="session-body">
+        <div class="progress-section">
           <el-progress
             type="circle"
             :percentage="activeSession.progress"
             :color="progressColor"
-            :width="clampNum(60, 80)"
+            :width="80"
             :stroke-width="6"
           />
-          <div class="session-info">
-            <p class="session-status-text">
-              {{ activeSession.status === 'charging' ? '⚡ 充电中' : '⏳ 排队中' }}
-            </p>
-            <p class="session-pct">{{ activeSession.progress }}%</p>
-            <p class="info-text">{{ activeSession.stationName }}</p>
+          <div class="progress-label">
+            <p class="progress-text">{{ activeSession.status === 'charging' ? '充电中' : '排队中' }}</p>
+            <p class="progress-pct">{{ activeSession.progress }}%</p>
           </div>
         </div>
-        <div class="session-footer show-mobile">
-          <span class="tap-hint">点击查看详情 →</span>
-        </div>
       </div>
-    </template>
-
-    <template v-else>
-      <div class="glass-card session-card empty-card">
-        <EmptyState description="暂无进行中的充电会话" action-text="⚡ 发起充电" @action="goToCreate" />
+      <div class="session-footer">
+        <span class="tap-hint">点击查看详情 →</span>
       </div>
-    </template>
+    </el-card>
 
-    <!-- 充电桩 Dashboard -->
+    <!-- 空状态：无活动会话 -->
+    <el-card v-else shadow="never" class="empty-card">
+      <EmptyState
+        description="暂无进行中的充电会话"
+        action-text="发起充电"
+        @action="goToCreate"
+      />
+    </el-card>
+
+    <!-- ═══════════════ 充电桩 Dashboard ═══════════════ -->
     <section class="dashboard-section">
       <div class="section-header">
-        <h2>🔌 充电桩状态</h2>
-        <button class="btn-glass btn-glass-sm" @click="refreshStations" :disabled="loading">
-          {{ loading ? '⟳' : '⟳ 刷新' }}
-        </button>
+        <h2>充电桩状态</h2>
+        <el-button text @click="refreshStations" :loading="loading" :icon="Refresh">
+          刷新
+        </el-button>
       </div>
 
+      <!-- 加载骨架 -->
       <div v-if="loading && stations.length === 0" class="loading-skeleton">
         <el-skeleton :rows="3" animated />
       </div>
 
-      <div v-else class="responsive-grid">
-        <div
+      <!-- 桩列表网格 -->
+      <div v-else class="station-grid">
+        <el-card
           v-for="s in stations"
           :key="s.id"
-          class="glass-card station-card"
+          shadow="never"
+          class="station-card"
           :class="{ 'is-disabled': s.status !== 'running' }"
           @click="goToDetail(s.id)"
         >
@@ -105,51 +101,55 @@
               <h3>{{ s.name }}</h3>
               <StationStatusBadge :status="s.status" />
             </div>
-            <span v-if="s.status === 'running'" class="wait-time glass-badge">
-              ⏱ ~{{ s.estimatedWaitMinutes }}分
+            <span v-if="s.status === 'running'" class="wait-time">
+              约 {{ s.estimatedWaitMinutes }} 分钟
             </span>
           </div>
 
+          <!-- 三区容量条 -->
           <div class="zone-bars">
             <div class="zone-item">
-              <span class="zone-label">🚶</span>
+              <span class="zone-label">排队</span>
               <el-progress
                 :percentage="capacityPct(s.queueCount, s.queueCapacity)"
                 :stroke-width="8"
-                color="#3B82F6"
+                color="#2563EB"
                 :format="() => `${s.queueCount}/${s.queueCapacity}`"
               />
             </div>
             <div class="zone-item">
-              <span class="zone-label">⏳</span>
+              <span class="zone-label">等待</span>
               <el-progress
                 :percentage="capacityPct(s.waitingCount, s.waitingCapacity)"
                 :stroke-width="8"
-                color="#F59E0B"
+                color="#3B82F6"
                 :format="() => `${s.waitingCount}/${s.waitingCapacity}`"
               />
             </div>
             <div class="zone-item">
-              <span class="zone-label">⚡</span>
+              <span class="zone-label">充电</span>
               <el-progress
                 :percentage="capacityPct(s.chargingCount, s.chargingCapacity)"
                 :stroke-width="8"
-                color="#22C55E"
+                color="#16A34A"
                 :format="() => `${s.chargingCount}/${s.chargingCapacity}`"
               />
             </div>
           </div>
 
+          <!-- 支持协议 -->
           <div class="protocol-tags">
             <el-tag
               v-for="p in s.supportedProtocols"
               :key="p.id"
               size="small"
               effect="plain"
-              class="glass-badge"
-            >{{ p.name }}</el-tag>
+              class="protocol-tag"
+            >
+              {{ p.name }}
+            </el-tag>
           </div>
-        </div>
+        </el-card>
       </div>
     </section>
   </div>
@@ -158,7 +158,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { User } from '@element-plus/icons-vue'
+import { User, Refresh } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useStationStore } from '@/stores/station'
 import ChargingStatusBadge from '@/components/ChargingStatusBadge.vue'
@@ -174,24 +174,30 @@ const user = computed(() => auth.user)
 const activeSession = computed(() => auth.activeSession)
 const stations = computed(() => stationStore.stations)
 const loading = computed(() => stationStore.loading)
-const isAdmin = computed(() => auth.isAdmin)
 
 let pollingTimer: ReturnType<typeof setInterval> | null = null
 
 function startPolling() {
   stopPolling()
   pollingTimer = setInterval(() => {
-    stationStore.fetchStations(true)
-    if (auth.user) auth.fetchUserInfo()
+    stationStore.fetchStations(true)  // silent refresh
+    if (auth.user) {
+      auth.fetchUserInfo()
+    }
   }, POLLING_INTERVAL)
 }
+
 function stopPolling() {
-  if (pollingTimer) { clearInterval(pollingTimer); pollingTimer = null }
+  if (pollingTimer) {
+    clearInterval(pollingTimer)
+    pollingTimer = null
+  }
 }
 
 const progressColor = computed(() => {
-  if (!activeSession.value) return 'var(--color-primary)'
-  return activeSession.value.status === 'charging' ? 'var(--color-success)' : 'var(--color-primary)'
+  if (!activeSession.value) return '#2563EB'
+  if (activeSession.value.status === 'charging') return '#16A34A'
+  return '#2563EB'
 })
 
 function capacityPct(count: number, capacity: number): number {
@@ -199,58 +205,62 @@ function capacityPct(count: number, capacity: number): number {
   return Math.min(100, Math.round((count / capacity) * 100))
 }
 
-function clampIcon(min: number, max: number) {
-  return Math.max(min, Math.min(max, Math.round(window.innerWidth / 25)))
+function goToSession() {
+  if (activeSession.value) {
+    router.push(`/sessions/${activeSession.value.sessionId}`)
+  }
 }
 
-function clampNum(min: number, max: number) {
-  return Math.max(min, Math.min(max, Math.round(window.innerWidth / 12)))
+function goToCreate() {
+  router.push('/sessions/create')
 }
 
-function goToSession() { activeSession.value && router.push(`/sessions/${activeSession.value.sessionId}`) }
-function goToCreate() { router.push('/sessions/create') }
-function goToDetail(id: number) { router.push(`/stations/${id}`) }
-function goToBills() { router.push('/bills') }
-function goToAdmin() { router.push('/admin/dashboard') }
-function refreshStations() { stationStore.fetchStations() }
+function goToDetail(id: number) {
+  router.push(`/stations/${id}`)
+}
+
+function refreshStations() {
+  stationStore.fetchStations()
+}
 
 onMounted(async () => {
-  if (!auth.user) await auth.fetchUserInfo()
+  if (!auth.user) {
+    await auth.fetchUserInfo()
+  }
   stationStore.fetchStations()
   startPolling()
 })
-onUnmounted(stopPolling)
+
+onUnmounted(() => {
+  stopPolling()
+})
 </script>
 
 <style scoped>
 .home {
   display: flex;
   flex-direction: column;
-  gap: clamp(16px, 2vw, 24px);
-  max-width: 1200px;
+  gap: 20px;
+  max-width: 900px;
   margin: 0 auto;
 }
 
-.hero-section {
-  display: flex;
-  flex-direction: column;
-  gap: clamp(12px, 1.5vw, 16px);
-}
-
+/* ── 用户信息卡片 ── */
 .user-card {
-  padding: clamp(16px, 2vw, 24px);
+  border-radius: 12px;
 }
 
 .user-info {
   display: flex;
   align-items: flex-start;
-  gap: clamp(12px, 1.5vw, 16px);
+  gap: 16px;
 }
 
 .user-avatar {
-  width: clamp(44px, 5vw, 56px);
-  height: clamp(44px, 5vw, 56px);
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
+  background: #2563EB;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -258,114 +268,87 @@ onUnmounted(stopPolling)
 }
 
 .user-detail h3 {
-  font-size: clamp(16px, 2vw, 18px);
+  font-size: 18px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: #1A1A1A;
   margin-bottom: 4px;
 }
 
 .user-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   flex-wrap: wrap;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .meta-item {
   font-size: 13px;
-  color: var(--text-tertiary);
-}
-
-.meta-label {
-  font-size: 12px;
-  color: var(--text-tertiary);
+  color: #737373;
 }
 
 .protocol-tags {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 4px;
-}
-
-/* 快捷操作 */
-.quick-actions {
-  display: flex;
   flex-wrap: wrap;
-  gap: clamp(8px, 1vw, 12px);
 }
 
-.quick-btn {
-  flex: 1;
-  min-width: 140px;
+.meta-label {
+  font-size: 12px;
+  color: #737373;
 }
 
-@media (max-width: 480px) {
-  .quick-btn {
-    min-width: calc(50% - 6px);
-    flex: 1 1 auto;
-  }
+/* ── 活动会话 ── */
+.active-session-card {
+  border-radius: 12px;
+  border-left: 4px solid #16A34A;
+  transition: box-shadow 0.2s;
 }
 
-/* 会话卡片 */
-.session-card {
-  padding: clamp(16px, 2vw, 24px);
-  transition: all 0.3s ease;
-}
-
-.session-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lg), var(--shadow-glass);
+.active-session-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .session-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: clamp(12px, 1.5vw, 16px);
-  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
 }
 
 .session-station {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
-  color: var(--text-primary);
-  flex: 1;
+  color: #1A1A1A;
 }
 
 .session-body {
   display: flex;
-  align-items: center;
-  gap: clamp(16px, 2.5vw, 24px);
+  justify-content: center;
+  padding: 8px 0;
 }
 
-.session-info {
+.progress-section {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 20px;
 }
 
-.session-status-text {
-  font-size: clamp(14px, 1.5vw, 16px);
+.progress-label {
+  text-align: left;
+}
+
+.progress-text {
+  font-size: 14px;
+  color: #737373;
+}
+
+.progress-pct {
+  font-size: 24px;
   font-weight: 600;
-  color: var(--color-success);
-}
-
-.session-pct {
-  font-size: clamp(22px, 3vw, 28px);
-  font-weight: 700;
-  color: var(--text-primary);
+  color: #1A1A1A;
   font-family: 'JetBrains Mono', monospace;
-}
-
-.info-text {
-  font-size: 13px;
-  color: var(--text-tertiary);
-}
-
-.tap-hint {
-  font-size: 12px;
-  color: var(--text-tertiary);
 }
 
 .session-footer {
@@ -373,16 +356,20 @@ onUnmounted(stopPolling)
   margin-top: 8px;
 }
 
-.empty-card {
-  display: flex;
-  justify-content: center;
+.tap-hint {
+  font-size: 12px;
+  color: #9CA3AF;
 }
 
-/* 充电桩区域 */
+.empty-card {
+  border-radius: 12px;
+}
+
+/* ── Dashboard 充电桩区域 ── */
 .dashboard-section {
   display: flex;
   flex-direction: column;
-  gap: clamp(12px, 1.5vw, 16px);
+  gap: 16px;
 }
 
 .section-header {
@@ -392,73 +379,80 @@ onUnmounted(stopPolling)
 }
 
 .section-header h2 {
-  font-size: clamp(17px, 2vw, 20px);
+  font-size: 20px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: #1A1A1A;
+}
+
+.station-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+@media (min-width: 768px) {
+  .station-grid {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 .station-card {
-  padding: clamp(14px, 1.8vw, 20px);
+  border-radius: 12px;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: box-shadow 0.2s;
 }
 
 .station-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lg), var(--shadow-glass);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .station-card.is-disabled {
-  opacity: 0.6;
+  opacity: 0.7;
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: clamp(10px, 1.2vw, 14px);
-  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .card-title-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;
 }
 
 .card-title-row h3 {
-  font-size: clamp(14px, 1.4vw, 16px);
+  font-size: 16px;
   font-weight: 600;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: #1A1A1A;
 }
 
 .wait-time {
-  font-size: clamp(11px, 1vw, 12px);
+  font-size: 12px;
+  color: #737373;
   white-space: nowrap;
 }
 
 .zone-bars {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: clamp(10px, 1.2vw, 14px);
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .zone-item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .zone-label {
-  font-size: clamp(12px, 1.2vw, 14px);
-  width: 24px;
+  font-size: 12px;
+  color: #737373;
+  width: 32px;
   flex-shrink: 0;
-  text-align: center;
 }
 
 .zone-item .el-progress {
@@ -469,6 +463,10 @@ onUnmounted(stopPolling)
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+}
+
+.protocol-tag {
+  font-size: 11px;
 }
 
 .loading-skeleton {
