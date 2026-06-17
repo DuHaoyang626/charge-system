@@ -27,12 +27,12 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     try {
       const res = await loginApi(data)
-      const body = res.data as { code: number; data: LoginResponse }
+      const body = res.data as { code: number; data: LoginResponse; message?: string }
       if (body.code === 200) {
         _setSession(body.data)
         return body.data
       }
-      throw new Error(body.message || '登录失败')
+      throw new Error(body.message || (res.data as any)?.message || '登录失败')
     } finally {
       loading.value = false
     }

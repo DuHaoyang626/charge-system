@@ -1,20 +1,21 @@
 <template>
   <div class="station-manage">
-    <!-- 页面标题 -->
     <div class="page-header">
       <div>
-        <h2>充电桩管理</h2>
+        <h2>🔌 充电桩管理</h2>
         <p class="page-desc">创建、修改、删除充电桩，控制启停</p>
       </div>
-      <el-button type="primary" :icon="Plus" @click="openCreate">新建充电桩</el-button>
+      <button class="btn-glass btn-glass-primary" @click="openCreate">
+        ➕ 新建充电桩
+      </button>
     </div>
 
-    <!-- 列表表格 -->
-    <el-card shadow="never" class="table-card">
-      <el-table :data="stations" v-loading="loading" stripe style="width: 100%">
+    <div class="glass-card table-card">
+      <div class="table-scroll">
+        <el-table :data="stations" v-loading="loading" stripe style="width: 100%">
         <el-table-column prop="id" label="ID" width="60" />
         <el-table-column prop="name" label="名称" min-width="140" />
-        <el-table-column label="状态" width="100">
+        <el-table-column label="状态" width="110">
           <template #default="{ row }">
             <StationStatusBadge :status="row.status" />
           </template>
@@ -30,7 +31,7 @@
         </el-table-column>
         <el-table-column label="支持协议" min-width="180">
           <template #default="{ row }">
-            <el-tag v-for="p in row.supportedProtocols" :key="p.id" size="small" effect="plain" class="proto-tag">
+            <el-tag v-for="p in row.supportedProtocols" :key="p.id" size="small" effect="plain" class="glass-badge">
               {{ p.name }}
             </el-tag>
             <span v-if="!row.supportedProtocols?.length" class="no-data">--</span>
@@ -38,14 +39,14 @@
         </el-table-column>
         <el-table-column label="操作" width="300" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" text @click="openEdit(row)">编辑</el-button>
-            <el-button
-              size="small" text
-              :type="row.status === 'running' ? 'warning' : 'success'"
+            <button class="btn-glass btn-glass-sm" @click="openEdit(row)">✏️ 编辑</button>
+            <button
+              class="btn-glass btn-glass-sm"
+              :class="row.status === 'running' ? 'btn-glass-warning' : 'btn-glass-success'"
               @click="handleToggleStatus(row)"
             >
-              {{ row.status === 'running' ? '停止' : '启动' }}
-            </el-button>
+              {{ row.status === 'running' ? '⏹ 停止' : '▶️ 启动' }}
+            </button>
             <el-popconfirm
               v-if="row.status === 'running'"
               title="紧急停止后排队/等待/充电中车辆全部重调度到其他桩，确定？"
@@ -53,7 +54,7 @@
               @confirm="handleEmergencyStop(row)"
             >
               <template #reference>
-                <el-button size="small" text type="danger">紧急停止</el-button>
+                <button class="btn-glass btn-glass-sm btn-glass-danger">🚨 紧急停止</button>
               </template>
             </el-popconfirm>
             <el-popconfirm
@@ -62,13 +63,14 @@
               @confirm="handleDelete(row)"
             >
               <template #reference>
-                <el-button size="small" text type="danger">删除</el-button>
+                <button class="btn-glass btn-glass-sm btn-glass-danger">🗑️ 删除</button>
               </template>
             </el-popconfirm>
           </template>
         </el-table-column>
       </el-table>
-    </el-card>
+      </div>
+    </div>
 
     <!-- ═══════════ 创建/编辑对话框 ═══════════ -->
     <el-dialog
@@ -76,6 +78,7 @@
       :title="isEditing ? '编辑充电桩' : '新建充电桩'"
       :width="520"
       :close-on-click-modal="false"
+      class="glass-dialog"
     >
       <el-form
         ref="formRef"
@@ -85,7 +88,7 @@
         @submit.prevent="handleSubmit"
       >
         <el-form-item label="充电桩名称" prop="name">
-          <el-input v-model="form.name" placeholder="如 C区-03号桩" />
+          <el-input v-model="form.name" placeholder="如 C区-03号桩" class="glass-input" />
         </el-form-item>
 
         <el-row :gutter="12">
@@ -130,10 +133,10 @@
       </el-form>
 
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleSubmit">
-          {{ isEditing ? '保存修改' : '创建' }}
-        </el-button>
+        <button class="btn-glass btn-glass-sm" @click="dialogVisible = false">取消</button>
+        <button class="btn-glass btn-glass-primary btn-glass-sm" :disabled="submitting" @click="handleSubmit">
+          {{ isEditing ? '💾 保存修改' : '✅ 创建' }}
+        </button>
       </template>
     </el-dialog>
   </div>
@@ -142,7 +145,6 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import StationStatusBadge from '@/components/StationStatusBadge.vue'
 import {
@@ -157,7 +159,6 @@ import {
 } from '@/api/admin/station'
 import type { ProtocolInfo } from '@/api/station'
 
-// ── 状态 ──
 const stations = ref<any[]>([])
 const loading = ref(false)
 const submitting = ref(false)
@@ -189,18 +190,15 @@ const rules: FormRules = {
   ],
 }
 
-// ── 数据加载 ──
 async function fetchStations() {
   loading.value = true
   try {
     const res = await getAdminStationsApi()
     const body = res.data as any
     stations.value = body.data?.stations || []
-  } catch (err: any) {
+  } catch {
     ElMessage.error('获取充电桩列表失败')
-  } finally {
-    loading.value = false
-  }
+  } finally { loading.value = false }
 }
 
 async function fetchProtocols() {
@@ -219,7 +217,6 @@ async function fetchProtocols() {
   }
 }
 
-// ── 创建/编辑对话框 ──
 function openCreate() {
   isEditing.value = false
   editingId.value = null
@@ -242,7 +239,6 @@ function openEdit(row: any) {
 async function handleSubmit() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
-
   submitting.value = true
   try {
     const data = {
@@ -253,7 +249,6 @@ async function handleSubmit() {
       protocolIds: form.protocolIds,
       baseServiceFee: form.baseServiceFee,
     }
-
     if (isEditing.value && editingId.value) {
       await updateStationApi(editingId.value, data)
       ElMessage.success('充电桩配置已更新')
@@ -265,12 +260,9 @@ async function handleSubmit() {
     fetchStations()
   } catch (err: any) {
     ElMessage.error(err?.response?.data?.message || '操作失败')
-  } finally {
-    submitting.value = false
-  }
+  } finally { submitting.value = false }
 }
 
-// ── 启停 ──
 async function handleToggleStatus(row: any) {
   try {
     if (row.status === 'running') {
@@ -287,13 +279,10 @@ async function handleToggleStatus(row: any) {
     }
     fetchStations()
   } catch (err: any) {
-    if (err?.code !== 'cancel') {
-      ElMessage.error(err?.response?.data?.message || '操作失败')
-    }
+    if (err?.code !== 'cancel') ElMessage.error(err?.response?.data?.message || '操作失败')
   }
 }
 
-// ── 紧急停止 ──
 async function handleEmergencyStop(row: any) {
   try {
     const res = await emergencyStopStationApi(row.id)
@@ -305,7 +294,6 @@ async function handleEmergencyStop(row: any) {
   }
 }
 
-// ── 删除 ──
 async function handleDelete(row: any) {
   try {
     await deleteStationApi(row.id)
@@ -316,10 +304,7 @@ async function handleDelete(row: any) {
   }
 }
 
-onMounted(() => {
-  fetchStations()
-  fetchProtocols()
-})
+onMounted(() => { fetchStations(); fetchProtocols() })
 </script>
 
 <style scoped>
@@ -337,19 +322,20 @@ onMounted(() => {
 
 .page-header h2 {
   font-size: 22px;
-  font-weight: 600;
-  color: #1E293B;
+  font-weight: 700;
+  color: var(--text-primary);
   margin-bottom: 4px;
 }
 
 .page-desc {
   font-size: 14px;
-  color: #64748B;
+  color: var(--text-tertiary);
   margin: 0;
 }
 
 .table-card {
-  border-radius: 10px;
+  padding: 4px;
+  overflow: hidden;
 }
 
 .zone-info {
@@ -357,23 +343,17 @@ onMounted(() => {
   gap: 12px;
   font-size: 13px;
   font-family: 'JetBrains Mono', monospace;
-  color: #475569;
-}
-
-.proto-tag {
-  margin-right: 4px;
-  margin-bottom: 2px;
-  font-size: 11px;
+  color: var(--text-secondary);
 }
 
 .no-data {
-  color: #94A3B8;
+  color: var(--text-tertiary);
   font-size: 13px;
 }
 
 .form-tip {
   font-size: 12px;
-  color: #94A3B8;
+  color: var(--text-tertiary);
   margin-top: 4px;
 }
 </style>

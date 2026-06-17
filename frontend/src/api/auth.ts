@@ -54,6 +54,8 @@ export interface ActiveSession {
   status: string
   stationName: string
   progress: number
+  chargedEnergyKwh?: number
+  requestedEnergyKwh?: number
 }
 
 export interface UserInfo {

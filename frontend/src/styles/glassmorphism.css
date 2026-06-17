@@ -1,0 +1,287 @@
+/**
+ * 毛玻璃 / 高斯模糊效果系统
+ * 配合 enlarged buttons 使用
+ */
+
+/* ───────── 基础毛玻璃卡片 ───────── */
+.glass-card {
+  background: var(--bg-glass);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-glass);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+  background: var(--bg-glass-hover);
+  box-shadow: var(--shadow-lg), var(--shadow-glass);
+  transform: translateY(-1px);
+}
+
+.glass-card:active {
+  transform: translateY(0px);
+}
+
+/* 强毛玻璃 */
+.glass-card-strong {
+  background: var(--bg-glass-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: var(--glass-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-glass);
+  transition: all 0.3s ease;
+}
+
+/* ───────── 放大按钮系统 ───────── */
+.btn-glass {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 28px;
+  font-size: 15px;
+  font-weight: 600;
+  border: var(--glass-border);
+  border-radius: var(--radius-full);
+  background: var(--bg-glass);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  position: relative;
+  overflow: hidden;
+  user-select: none;
+  text-decoration: none;
+  line-height: 1.4;
+}
+
+.btn-glass::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.10) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+.btn-glass:hover {
+  background: var(--bg-glass-hover);
+  box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+.btn-glass:active {
+  transform: translateY(0px);
+  box-shadow: var(--shadow-sm);
+}
+
+/* 主色按钮 */
+.btn-glass-primary {
+  background: var(--gradient-primary);
+  color: #FFFFFF;
+  border: none;
+  box-shadow: 0 4px 16px var(--color-primary-glow);
+}
+
+.btn-glass-primary::after {
+  background: linear-gradient(135deg, rgba(255,255,255,0.20) 0%, transparent 50%);
+}
+
+.btn-glass-primary:hover {
+  box-shadow: 0 6px 24px var(--color-primary-glow);
+  transform: translateY(-2px);
+}
+
+/* 成功按钮 */
+.btn-glass-success {
+  background: var(--gradient-success);
+  color: #FFFFFF;
+  border: none;
+  box-shadow: 0 4px 16px rgba(22, 163, 74, 0.30);
+}
+
+.btn-glass-success:hover {
+  box-shadow: 0 6px 24px rgba(22, 163, 74, 0.35);
+  transform: translateY(-2px);
+}
+
+/* 危险按钮 */
+.btn-glass-danger {
+  background: rgba(220, 38, 38, 0.15);
+  color: var(--color-danger);
+  border: 1px solid rgba(220, 38, 38, 0.25);
+}
+
+.btn-glass-danger:hover {
+  background: rgba(220, 38, 38, 0.25);
+  box-shadow: 0 4px 16px rgba(220, 38, 38, 0.15);
+}
+
+/* 警告按钮 */
+.btn-glass-warning {
+  background: rgba(217, 119, 6, 0.15);
+  color: var(--color-warning);
+  border: 1px solid rgba(217, 119, 6, 0.25);
+}
+
+.btn-glass-warning:hover {
+  background: rgba(217, 119, 6, 0.25);
+}
+
+/* Small 玻璃按钮 */
+.btn-glass-sm {
+  min-height: 36px;
+  padding: 6px 18px;
+  font-size: 13px;
+}
+
+/* Large 玻璃按钮 */
+.btn-glass-lg {
+  min-height: 52px;
+  padding: 14px 36px;
+  font-size: 17px;
+}
+
+/* 禁用状态 */
+.btn-glass:disabled,
+.btn-glass-primary:disabled,
+.btn-glass-success:disabled,
+.btn-glass-danger:disabled,
+.btn-glass-warning:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* ───────── 毛玻璃输入框 ───────── */
+.glass-input {
+  background: var(--bg-glass) !important;
+  backdrop-filter: var(--glass-blur) !important;
+  -webkit-backdrop-filter: var(--glass-blur) !important;
+  border: var(--glass-border) !important;
+  border-radius: var(--radius-md) !important;
+  transition: all 0.25s ease !important;
+}
+
+.glass-input:hover {
+  border-color: var(--border-hover) !important;
+  background: var(--bg-glass-hover) !important;
+}
+
+.glass-input:focus,
+.glass-input.is-focus {
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 0 0 3px var(--color-primary-bg) !important;
+}
+
+/* ───────── 毛玻璃导航 ───────── */
+.glass-navbar {
+  background: var(--bg-navbar);
+  backdrop-filter: var(--glass-blur-lg);
+  -webkit-backdrop-filter: var(--glass-blur-lg);
+  border-bottom: var(--glass-border);
+}
+
+/* ───────── 毛玻璃容器背景 ───────── */
+.glass-container {
+  background: var(--gradient-bg);
+  min-height: 100dvh;
+  position: relative;
+}
+
+/* 装饰性背景光晕 */
+.glass-container::before {
+  content: '';
+  position: fixed;
+  top: -20%;
+  left: -10%;
+  width: 50%;
+  height: 60%;
+  background: radial-gradient(ellipse, var(--color-primary-glow) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.5;
+}
+
+.glass-container::after {
+  content: '';
+  position: fixed;
+  bottom: -10%;
+  right: -10%;
+  width: 40%;
+  height: 50%;
+  background: radial-gradient(ellipse, rgba(59, 130, 246, 0.10) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.4;
+}
+
+/* 确保内容在光晕上方 */
+.glass-container > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ───────── 毛玻璃 Badge ───────── */
+.glass-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--bg-glass);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: var(--glass-border);
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+}
+
+/* ───────── 动画 ───────── */
+@keyframes glass-shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.glass-loading {
+  background: linear-gradient(90deg, var(--bg-glass) 25%, var(--bg-glass-hover) 50%, var(--bg-glass) 75%);
+  background-size: 200% 100%;
+  animation: glass-shimmer 1.5s ease-in-out infinite;
+}
+
+/* 页面进入动画 */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-enter {
+  animation: fade-in-up 0.4s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.scale-in {
+  animation: scale-in 0.3s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
