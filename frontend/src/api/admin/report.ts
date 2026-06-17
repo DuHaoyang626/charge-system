@@ -11,6 +11,6 @@ export function getRevenueApi(params?: Record<string, any>) {
   return api.get('/admin/reports/revenue', { params })
 }
 
-export function getUtilizationApi() {
-  return api.get('/admin/reports/utilization')
+export function getUtilizationApi(params?: Record<string, any>) {
+  return api.get('/admin/reports/utilization', { params })
 }

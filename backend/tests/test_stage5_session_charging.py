@@ -7,26 +7,42 @@
 import random
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session as DBSession
+from sqlmodel import Session as DBSession, select
 
 from core.database import engine
 from main import app
 from model.session import ChargingSession
+from model.station import Station
 
 client = TestClient(app)
 
 
+def _cleanup_station_counts():
+    """清理所有残留会话并重置桩计数，避免跨测试污染。"""
+    with DBSession(engine) as db:
+        for s in db.exec(select(ChargingSession).where(
+                ChargingSession.status.in_(["queued", "waiting", "charging"]))).all():
+            db.delete(s)
+        for st in db.exec(select(Station)).all():
+            st.queue_count = 0
+            st.waiting_count = 0
+            st.charging_count = 0
+            db.add(st)
+        db.commit()
+
+
 def make_user_and_session():
     """创建用户和排队会话，返回 (token, session_id)。"""
+    _cleanup_station_counts()
     suffix = random.randint(10000, 99999)
     plate = f"S5T{suffix}"
     r1 = client.post("/api/v1/auth/register", json={
         "licensePlate": plate, "userName": "t", "batteryCapacity": 100,
-        "password": "test123", "confirmPassword": "test123", "protocolIds": [1, 4],
+        "password": "test123", "confirmPassword": "test123", "protocolIds": [1, 3],
     })
     token = r1.json()["data"]["token"]
     r2 = client.post("/api/v1/sessions",
-        json={"requestedEnergyKwh": 50.0, "protocolIds": [1, 4]},
+        json={"requestedEnergyKwh": 50.0, "protocolIds": [1, 3]},
         headers={"Authorization": f"Bearer {token}"})
     assert r2.status_code == 201
     sid = r2.json()["data"]["sessionId"]
@@ -36,18 +52,26 @@ def make_user_and_session():
 def force_session_to_charging(token: str, sid: int):
     """直接通过 DB 将会话状态改为 charging（跳过调度循环）。"""
     from datetime import datetime
+    from model.station import Station
     with DBSession(engine) as db:
         s = db.get(ChargingSession, sid)
         if s:
+            # 同步更新桩计数：先减排队，再加等待
+            station = db.get(Station, s.station_id)
+            if station:
+                station.queue_count = max(0, station.queue_count - 1)
+                station.waiting_count = min(station.waiting_count + 1, station.waiting_capacity)
             s.status = "waiting"
             s.zone = "waiting"
             s.entered_waiting_at = datetime.utcnow()
             s.advance_ready = True
             db.add(s)
+            if station:
+                db.add(station)
             db.commit()
     # 通过 confirm API 进入充电
     resp = client.post(f"/api/v1/sessions/{sid}/confirm-charging",
-        json={"action": "confirm", "protocolId": 4},
+        json={"action": "confirm", "protocolId": 1},
         headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code in (200, 201), f"force_session_to_charging 失败: {resp.json()}"
 
@@ -91,7 +115,7 @@ class TestProtocolOptions:
     def test_modify_protocol(self):
         token, sid = make_user_and_session()
         resp = client.put(f"/api/v1/sessions/{sid}/protocol",
-            json={"protocolIds": [1, 4]},
+            json={"protocolIds": [1, 3]},
             headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code == 200
 
@@ -131,7 +155,7 @@ class TestConfirmCharging:
                 db.commit()
 
         resp = client.post(f"/api/v1/sessions/{sid}/confirm-charging",
-            json={"action": "confirm", "protocolId": 4},
+            json={"action": "confirm", "protocolId": 1},
             headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code in (200, 201), resp.json()
         data = resp.json()["data"]
@@ -161,9 +185,16 @@ class TestConfirmCharging:
         """等待态 advance_ready → confirm → 开始充电"""
         token, sid = make_user_and_session()
         from datetime import datetime
+        from model.station import Station
         with DBSession(engine) as db:
             s = db.get(ChargingSession, sid)
             if s:
+                # 同步更新桩计数：减排队、加等待
+                station = db.get(Station, s.station_id)
+                if station:
+                    station.queue_count = max(0, station.queue_count - 1)
+                    station.waiting_count = min(station.waiting_count + 1, station.waiting_capacity)
+                    db.add(station)
                 s.status = "waiting"
                 s.zone = "waiting"
                 s.entered_waiting_at = datetime.utcnow()
@@ -172,7 +203,7 @@ class TestConfirmCharging:
                 db.commit()
 
         resp = client.post(f"/api/v1/sessions/{sid}/confirm-charging",
-            json={"action": "confirm", "protocolId": 4},
+            json={"action": "confirm", "protocolId": 1},
             headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code in (200, 201), resp.json()
         assert resp.json()["data"]["status"] == "charging"
@@ -213,7 +244,7 @@ class TestConfirmCharging:
                 db.commit()
 
         resp = client.post(f"/api/v1/sessions/{sid}/confirm-charging",
-            json={"action": "confirm", "protocolId": 4},
+            json={"action": "confirm", "protocolId": 1},
             headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code == 400, resp.json()
         assert "暂未调度" in resp.json()["message"]

@@ -356,6 +356,8 @@ def _handle_confirm(
 
     # ── 等待 → 充电 ──
     if station:
+        if station.charging_count >= station.charging_capacity:
+            return resp_err(400, f"充电区已满 ({station.charging_count}/{station.charging_capacity})")
         station.waiting_count = max(0, station.waiting_count - 1)
         station.charging_count += 1
         db.add(station)

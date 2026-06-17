@@ -41,12 +41,12 @@ async def _create_completed_session() -> tuple[str, int]:
     plate = f"账单测试{suffix}"
     r1 = client.post("/api/v1/auth/register", json={
         "licensePlate": plate, "userName": "账单测试", "batteryCapacity": 100,
-        "password": "test123", "confirmPassword": "test123", "protocolIds": [1, 4],
+        "password": "test123", "confirmPassword": "test123", "protocolIds": [1, 3],
     })
     token = r1.json()["data"]["token"]
 
     r2 = client.post("/api/v1/sessions",
-        json={"requestedEnergyKwh": 0.5, "protocolIds": [1, 4]},
+        json={"requestedEnergyKwh": 0.5, "protocolIds": [1, 3]},
         headers={"Authorization": f"Bearer {token}"})
     sid = r2.json()["data"]["sessionId"]
 

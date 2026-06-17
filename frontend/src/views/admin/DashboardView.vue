@@ -156,10 +156,6 @@
             <span class="insight-val">¥{{ revenue?.serviceRevenue ?? '0.00' }}</span>
             <span class="insight-label">服务费收入</span>
           </div>
-          <div class="insight-item glass-card-strong">
-            <span class="insight-val">{{ revenue?.paidSessions ?? 0 }}</span>
-            <span class="insight-label">已支付订单</span>
-          </div>
         </div>
         <div v-else class="insight-empty">暂无收入数据</div>
       </div>

@@ -49,12 +49,12 @@ async def test_dispatch_flow():
     plate = f"调度测试{suffix}"
     r1 = client.post("/api/v1/auth/register", json={
         "licensePlate": plate, "userName": "调度测试", "batteryCapacity": 100,
-        "password": "test123", "confirmPassword": "test123", "protocolIds": [1, 4],
+        "password": "test123", "confirmPassword": "test123", "protocolIds": [1, 3],
     })
     token = r1.json()["data"]["token"]
 
     r2 = client.post("/api/v1/sessions",
-        json={"requestedEnergyKwh": 0.5, "protocolIds": [1, 4]},
+        json={"requestedEnergyKwh": 0.5, "protocolIds": [1, 3]},
         headers={"Authorization": f"Bearer {token}"})
     assert r2.status_code == 201
     session_id = r2.json()["data"]["sessionId"]
@@ -77,7 +77,7 @@ async def test_dispatch_flow():
 
     # 阶段 1b：用户确认 → 进入充电
     resp = client.post(f"/api/v1/sessions/{session_id}/confirm-charging",
-        json={"action": "confirm", "protocolId": 4},
+        json={"action": "confirm", "protocolId": 1},
         headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code in (200, 201), resp.json()
     data = resp.json()["data"]

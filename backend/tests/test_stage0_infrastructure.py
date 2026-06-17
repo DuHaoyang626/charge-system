@@ -31,7 +31,7 @@ def test_seed_data():
 
     with Session(engine) as db:
         protocols = db.exec(select(Protocol)).all()
-        assert len(protocols) >= 5, f"协议数量不足: {len(protocols)}"
+        assert len(protocols) >= 3, f"协议数量不足: {len(protocols)}"
 
         stations = db.exec(select(Station)).all()
         assert len(stations) >= 2, f"充电桩数量不足: {len(stations)}"

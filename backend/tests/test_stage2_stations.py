@@ -73,7 +73,7 @@ class TestAdminStations:
     def test_create_station(self, admin_token):
         resp = client.post("/api/v1/admin/stations",
             json={"name": "C区-03号桩", "queueCapacity": 5, "waitingCapacity": 3,
-                  "chargingCapacity": 2, "protocolIds": [1, 3, 4]},
+                  "chargingCapacity": 2, "protocolIds": [1, 3]},
             headers={"Authorization": f"Bearer {admin_token}"})
         assert resp.status_code in (200, 201)
 

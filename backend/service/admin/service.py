@@ -431,7 +431,6 @@ def get_revenue_report(
         "totalRevenue": round(total_revenue, 2),
         "electricityRevenue": round(total_electricity, 2),
         "serviceRevenue": round(total_service, 2),
-        "paidSessions": len(bills),
         "dataPoints": data_points,
     }
 

@@ -45,10 +45,6 @@
           <span class="summary-value">¥{{ revenue?.serviceRevenue ?? '0.00' }}</span>
           <span class="summary-label">服务费收入</span>
         </div>
-        <div class="insight-item glass-card-strong">
-          <span class="summary-value">{{ revenue?.paidSessions ?? 0 }}</span>
-          <span class="summary-label">已支付订单</span>
-        </div>
       </div>
       <div v-else class="no-data">暂无收入数据</div>
     </div>
@@ -108,7 +104,7 @@ async function fetchReports() {
     const [v, r, u] = await Promise.all([
       getChargingVolumeApi(dateParams),
       getRevenueApi(dateParams),
-      getUtilizationApi(),
+      getUtilizationApi(dateParams),
     ])
     volume.value = (v.data as any).data
     revenue.value = (r.data as any).data

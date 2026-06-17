@@ -22,6 +22,8 @@ async def admin_charging_volume(
     admin_id: int = Depends(get_current_admin),
 ):
     """充电量统计。"""
+    if not start_date or not end_date:
+        return resp_err(400, "缺少必填参数 startDate / endDate")
     if granularity not in ("day", "week", "month"):
         return resp_err(400, "granularity 必须是 day / week / month")
     data = get_charging_volume_report(
@@ -38,6 +40,8 @@ async def admin_revenue(
     admin_id: int = Depends(get_current_admin),
 ):
     """收入统计。"""
+    if not start_date or not end_date:
+        return resp_err(400, "缺少必填参数 startDate / endDate")
     if granularity not in ("day", "week", "month"):
         return resp_err(400, "granularity 必须是 day / week / month")
     data = get_revenue_report(
@@ -53,5 +57,7 @@ async def admin_utilization(
     admin_id: int = Depends(get_current_admin),
 ):
     """充电桩利用率。"""
+    if not start_date or not end_date:
+        return resp_err(400, "缺少必填参数 startDate / endDate")
     data = get_utilization_report(start_date=start_date, end_date=end_date)
     return resp_ok(data=data)
