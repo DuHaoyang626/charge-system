@@ -169,10 +169,11 @@ def _seed_initial_data() -> None:
         # 5. 电价时段 (与原来一致)
         # ════════════════════════════════════════════
         prices_data = [
+            ElectricityPrice(period_name="谷时", start_time="00:00", end_time="08:00", price_per_kwh=0.4),
             ElectricityPrice(period_name="峰时", start_time="08:00", end_time="11:00", price_per_kwh=1.2),
             ElectricityPrice(period_name="平时", start_time="11:00", end_time="18:00", price_per_kwh=0.8),
             ElectricityPrice(period_name="峰时", start_time="18:00", end_time="21:00", price_per_kwh=1.2),
-            ElectricityPrice(period_name="谷时", start_time="21:00", end_time="08:00", price_per_kwh=0.4),
+            ElectricityPrice(period_name="谷时", start_time="21:00", end_time="23:59", price_per_kwh=0.4),
         ]
         for ep in prices_data:
             session.add(ep)
