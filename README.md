@@ -109,12 +109,70 @@ npm run dev
 
 ```powershell
 cd backend
+
+# 运行所有测试（默认使用临时 SQLite 文件）
 python -m pytest tests/ -v
+
+# 运行特定测试文件
+python -m pytest tests/test_stage1_auth.py -v
+
+# 运行测试桩示例（展示三种测试模式）
+python -m pytest tests/test_example_mock.py -v
 ```
 
-当前共 **14 项测试**：
+当前测试分为两类：
+
+### 集成测试（原有测试）
 - 阶段 0（基础设施）：4 项 — 模块导入、种子数据、JWT 签发、密码哈希
-- 阶段 1（认证模块）：10 项 — 注册/登录/用户信息全流程
+- 阶段 1（认证模块）：3 类 — 注册/登录/用户信息全流程
+- 阶段 2（充电桩模块）：用户端查询 + 管理端增删改
+- 阶段 3-6（会话/调度/计费）：完整业务流程
+
+### 测试桩示例（`test_example_mock.py`）
+展示三种测试模式：
+1. **`in_memory_db` fixture** — 内存 SQLite，快且保真
+2. **`mock_client` / `seeded_client`** — HTTP 接口层单元测试
+3. **`unittest.mock` 直接 Mock** — 纯单元测试，零数据库依赖
+
+### 测试模式切换
+
+项目支持三种测试模式，通过 fixture 名选择：
+
+| 模式 | Fixture | 数据库 | 速度 | 适用场景 |
+|------|---------|--------|------|----------|
+| 集成测试 | `client` / `db_session` | 临时 SQLite 文件 | 中 | 完整业务流程验证 |
+| 内存 DB | `in_memory_db` / `mock_client` | 内存 SQLite | 快 | Service 层单测 |
+| 纯 Mock | `@patch` / `MagicMock` | 无 | 最快 | 纯逻辑 / 异常路径测试 |
+
+在测试函数中通过参数引用不同的 fixture 即可切换：
+
+```python
+# 方式 A：内存数据库 Service 测试
+def test_service(in_memory_db):
+    from service.account.service import register
+    result = register(...)
+    assert result["token"]
+
+# 方式 B：HTTP 接口测试（内存数据库）
+def test_api(mock_client):
+    resp = mock_client.get("/health")
+    assert resp.status_code == 200
+
+# 方式 C：HTTP 接口测试（含种子数据）
+def test_api_with_seed(seeded_client, admin_token):
+    resp = seeded_client.get("/api/v1/stations",
+        headers={"Authorization": f"Bearer {admin_token}"})
+    assert len(resp.json()["data"]["stations"]) >= 5
+
+# 方式 D：纯 Mock 单元测试
+@patch("service.account.service.Session")
+def test_login_mock(mock_session):
+    mock_db = MagicMock()
+    mock_db.exec().first.return_value = mock_user
+    mock_session.return_value.__enter__.return_value = mock_db
+    result = login(...)
+    assert result["token"]
+```
 
 ## 项目结构
 
@@ -131,12 +189,13 @@ charge-system/
 │   │   └── admin/              # 管理端（config/stations/sessions/bills/queues/reports）
 │   ├── core/                   # 核心基础设施
 │   │   ├── config.py           # 配置加载
-│   │   ├── database.py         # 数据库初始化 + 种子数据
+│   │   ├── database.py         # 数据库初始化 + 种子数据 + set_engine() 切换
 │   │   ├── security.py         # JWT + 密码哈希
 │   │   ├── exceptions.py       # 业务异常 + 错误码
 │   │   ├── exception_handlers.py
 │   │   ├── deps.py             # FastAPI 依赖注入
-│   │   └── response.py         # 统一响应格式
+│   │   ├── response.py         # 统一响应格式
+│   │   └── test_utils.py       # 测试桩 + 工厂函数 + Mock 工具
 │   ├── model/                  # SQLModel 数据模型
 │   ├── service/                # 业务逻辑层
 │   ├── scheduler/              # 定时调度
@@ -176,6 +235,13 @@ JWT_SECRET_KEY=change-this-to-a-random-string-at-least-32-chars
 # 数据库连接（SQLite 文件路径）
 DATABASE_URL=sqlite:///./data/charge_system.db
 ```
+
+### 测试环境变量
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `DATABASE_URL` | 测试数据库连接（conftest.py 自动设为临时文件） | `sqlite:///./data/charge_system.db` |
+| `CHARGE_TEST_MODE` | 测试模式（可选 `mock`） | 未设置时使用临时 SQLite 文件 |
 
 前端环境变量（`frontend/env/.env.development`）：
 

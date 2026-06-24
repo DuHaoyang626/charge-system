@@ -2,6 +2,17 @@
 数据库连接 — engine + init_db + 种子数据。
 
 在应用 lifecycle 启动时调用 init_db() 自动建表并灌入初始数据。
+
+运行时引擎切换：
+    get_engine()         → 获取当前 active engine（推荐使用）
+    set_engine(new)      → 替换 engine（测试时注入 mock / 临时数据库）
+    reset_engine()       → 恢复为默认 engine
+    engine               → 模块级变量，保持向后兼容
+
+切换方式（三种）：
+    1. 环境变量 CHARGE_DB_MODE=mock → 自动使用内存数据库（主应用模式）
+    2. 环境变量 DATABASE_URL → 指向任意数据库路径
+    3. 代码调用 set_engine(test_engine) → 动态替换（测试时用）
 """
 
 import logging
@@ -13,13 +24,54 @@ from core.logger import system_logger
 
 logger = logging.getLogger("charge-system.database")
 
-# ── SQLite 连接配置 ──
-# check_same_thread=False 允许 FastAPI 多线程访问同一 SQLite 文件
-engine = create_engine(
-    settings.DATABASE_URL,
-    echo=False,
-    connect_args={"check_same_thread": False},
-)
+# ── 引擎创建 ──
+# 支持两种模式：
+#   CHARGE_DB_MODE=mock → 内存 SQLite（StaticPool，不持久化，适合开发/测试）
+#   默认 → 使用 settings.DATABASE_URL 指定的文件数据库
+import os
+
+_db_mode = os.getenv("CHARGE_DB_MODE", "").strip().lower()
+
+if _db_mode == "mock":
+    from sqlalchemy.pool import StaticPool
+
+    _default_engine = create_engine(
+        "sqlite://",
+        echo=False,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    logger.info("数据库模式: MOCK（内存 SQLite，不持久化）")
+else:
+    _default_engine = create_engine(
+        settings.DATABASE_URL,
+        echo=False,
+        connect_args={"check_same_thread": False},
+    )
+    logger.info("数据库模式: FILE (%s)", settings.DATABASE_URL)
+
+engine = _default_engine
+
+
+def get_engine():
+    """获取当前 active engine。推荐代替直接引用 engine 变量。"""
+    return engine
+
+
+def set_engine(new_engine) -> None:
+    """
+    替换全局 engine（用于测试）。
+    注意：已在模块级执行了 from core.database import engine 的模块
+    仍持有旧引用，需配合 patch_service_engines() 一起使用。
+    """
+    global engine
+    engine = new_engine
+
+
+def reset_engine() -> None:
+    """恢复为默认 engine（测试 teardown 时调用）。"""
+    global engine
+    engine = _default_engine
 
 
 # ──────────────────────────────────────────────
